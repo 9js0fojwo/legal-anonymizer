@@ -587,16 +587,22 @@ def re_anonymize_document():
         anonymizer.processor.write_mapping(detailed_mapping, str(mapping_path))
         saved_files.append(('mapping_file', str(mapping_path)))
 
+        # 构建 output_paths（每种格式 → 文件路径），前端用来生成多个下载按钮
+        output_files = {}
         main_output = None
         for key, path in saved_files:
             if key.startswith('output_'):
-                main_output = path
-                break
+                fmt_name = key.replace('output_', '')   # docx / pdf / md / txt
+                output_files[fmt_name] = path
+                if main_output is None:
+                    main_output = path
 
         session['output_path'] = main_output
+        session['output_paths'] = output_files
         session['mapping_path'] = str(mapping_path)
         session['result'] = {
             'output_path': main_output,
+            'output_paths': output_files,
             'mapping_path': str(mapping_path),
             'total_matched': detailed_mapping['metadata']['entity_count'],
             'replacements_made': detailed_mapping['metadata']['replacements_made'],
@@ -607,6 +613,7 @@ def re_anonymize_document():
         return jsonify({
             'status': 'success',
             'output_path': main_output,
+            'output_paths': output_files,
             'mapping_path': str(mapping_path),
             'total_matched': detailed_mapping['metadata']['entity_count'],
             'replacements_made': detailed_mapping['metadata']['replacements_made'],
