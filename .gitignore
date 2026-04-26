@@ -77,3 +77,6 @@ Thumbs.db
 
 # 启动脚本写的用户偏好（每个用户机器自己生成）
 .user_config
+
+# 模型预下载完成标志（每个用户机器自己生成）
+.models_downloaded

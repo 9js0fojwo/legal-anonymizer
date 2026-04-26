@@ -657,7 +657,7 @@ body {
               <strong>中文 NER</strong>（CLUENER，~400MB）
               <div class="llm-hint">补规则漏掉的中文人名/公司/地址，含复姓识别</div>
             </label>
-            <div class="toggle-switch" id="cn-llm-switch" onclick="toggleCnLlm()"></div>
+            <div class="toggle-switch on" id="cn-llm-switch" onclick="toggleCnLlm()"></div>
           </div>
           {% if enable_openai %}
           <div class="llm-toggle">
@@ -891,7 +891,7 @@ let state = {
   fileType: '',
   isPdf: false,
   useOcr: false,
-  useCnLlm: false,
+  useCnLlm: true,   // 默认开启（模型在首次启动时已预下载）
   useLlm: false,
   findings: {},
   typeNames: {},
