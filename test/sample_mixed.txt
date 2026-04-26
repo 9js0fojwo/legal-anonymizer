@@ -1,0 +1,24 @@
+民事起诉状
+
+原告：张三，男，1985年3月12日生，身份证号 110105198503121234，
+住北京市朝阳区建国路88号SOHO现代城A座1203室，
+手机 13812345678，邮箱 zhangsan@example.com。
+
+被告：Acme Legal Services, Inc., a company incorporated in Delaware, USA,
+represented by John Smith (CEO), email: john.smith@acme-legal.com,
+phone: +1-415-555-0142, address: 2025 Mission Street, San Francisco, CA 94110, USA.
+
+API access token for evidence platform: sk-proj-abcdEFGH1234ijklMNOP5678
+Reference URL: https://evidence.court.gov.cn/case/2024-hu-0012
+对方内部联系人 Jennifer Chen，电话 +44-20-7946-0958。
+
+诉讼请求：
+1. 判令被告 Acme Legal Services, Inc. 支付服务费 USD 125,000；
+2. 判令被告向原告张三赔偿律师费 50,000 元；
+3. 案件受理费由被告承担。
+
+此致
+北京市朝阳区人民法院
+
+原告：张三（签字）
+2024年10月15日

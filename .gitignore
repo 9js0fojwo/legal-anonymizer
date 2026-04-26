@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output files
+test_output/
+examples/output/
+*.pdf
+*.docx
+!examples/*.txt
+!examples/*.json
+# 例外：项目自带的使用指南需要保留
+!首次使用指南.pdf
+
+# 用户工作目录：放客户文件 + 脱敏结果（绝不能上传到 GitHub）
+inbox/*
+!inbox/.gitkeep
+output/*
+!output/.gitkeep
+uploads/*
+!uploads/.gitkeep
+test/cases/
+test/snapshots/
+test/samples/
+
+# Mapping files (may contain sensitive data)
+*_mapping.json
+
+# HuggingFace / Paddle 模型缓存（首次启动会自动下载，不应入仓）
+.cache/
+.paddlex/
+
+# debug 脚本（开发期产物，不发布）
+test/debug_*.py
+test/run_real_test.py
+test/test_pdf_inplace.py
+test/test_ocr_engines.py
+test/test_mineru.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code 本地配置（不应进开源仓库）
+.claude/
+
+# 启动脚本写的用户偏好（每个用户机器自己生成）
+.user_config

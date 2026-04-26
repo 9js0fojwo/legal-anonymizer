@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>法律文档脱敏工具 - 黄灵宝同学出品</title>
+<style>
+:root {
+  --primary: #165DFF;
+  --primary-hover: #0D3DCC;
+  --primary-light: #E8F0FF;
+  --primary-bg: rgba(22, 93, 255, 0.05);
+  --success: #00B42A;
+  --success-light: #E8FFEA;
+  --warning: #FF7D00;
+  --warning-light: #FFF7E8;
+  --error: #F53F3F;
+  --error-light: #FFECE8;
+  --bg: #F2F3F5;
+  --card: #FFFFFF;
+  --text: #1D2129;
+  --text-2: #4E5969;
+  --text-3: #86909C;
+  --border: #E5E6EB;
+  --border-light: #F2F3F5;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, #0f2b46 0%, #1a4a7a 40%, #2670b8 100%);
+  color: white;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  position: relative;
+  overflow: hidden;
+}
+.header::before {
+  content: '';
+  position: absolute;
+  top: -50%; right: -10%;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.header-icon {
+  width: 40px; height: 40px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+.header-badge {
+  font-size: 12px;
+  background: rgba(255,255,255,0.12);
+  padding: 5px 14px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  letter-spacing: 0.3px;
+}
+
+/* Main */
+.main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+
+/* Stepper */
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 24px;
+  padding: 16px 24px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.step-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: default;
+  transition: all 0.2s;
+}
+.step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  background: var(--border-light);
+  color: var(--text-3);
+  transition: all 0.2s;
+}
+.step-label { font-size: 14px; color: var(--text-3); transition: all 0.2s; }
+.step-item.active .step-num { background: var(--primary); color: white; }
+.step-item.active .step-label { color: var(--text); font-weight: 500; }
+.step-item.done .step-num { background: var(--success); color: white; }
+.step-item.done .step-label { color: var(--success); }
+.step-divider {
+  width: 40px; height: 2px;
+  background: var(--border-light);
+  margin: 0 4px;
+}
+.step-divider.done { background: var(--success); }
+
+/* Cards */
+.card {
+  background: var(--card);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+  padding: 24px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(0,0,0,0.03);
+  transition: box-shadow 0.2s;
+}
+.card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 6px 20px rgba(0,0,0,0.04);
+}
+.card-title {
+  font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px;
+}
+.card-title::before {
+  content: '';
+  width: 3px; height: 16px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+/* Upload Zone */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 52px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: linear-gradient(180deg, var(--card) 0%, #fafbfc 100%);
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: var(--primary);
+  background: linear-gradient(180deg, var(--primary-bg) 0%, #eef4ff 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(22, 93, 255, 0.08);
+}
+.upload-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.55; }
+.upload-text { font-size: 15px; color: var(--text-2); margin-bottom: 8px; font-weight: 500; }
+.upload-hint { font-size: 13px; color: var(--text-3); }
+.upload-formats {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 6px; margin-top: 12px;
+}
+.format-badge {
+  font-size: 11px; padding: 2px 8px;
+  background: var(--border-light);
+  border-radius: 10px; color: var(--text-3);
+}
+#file-input { display: none; }
+
+/* Inbox */
+.inbox-section { margin-top: 16px; }
+.inbox-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.inbox-path {
+  font-size: 12px; color: var(--text-3);
+  background: var(--border-light);
+  padding: 4px 10px; border-radius: 4px;
+  font-family: "SF Mono", Menlo, monospace;
+}
+.inbox-list { display: flex; flex-direction: column; gap: 6px; }
+.inbox-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.inbox-item:hover {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+.inbox-item-left { display: flex; align-items: center; gap: 10px; }
+.inbox-item-icon { font-size: 20px; }
+.inbox-item-name { font-size: 14px; font-weight: 500; }
+.inbox-item-meta { font-size: 12px; color: var(--text-3); }
+.inbox-empty { text-align: center; padding: 24px; color: var(--text-3); font-size: 14px; }
+
+/* File Card */
+.file-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px;
+  background: var(--primary-bg);
+  border: 1px solid rgba(22,93,255,0.15);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+.file-card-icon { font-size: 28px; }
+.file-card-info { flex: 1; }
+.file-card-name { font-size: 14px; font-weight: 500; }
+.file-card-size { font-size: 12px; color: var(--text-3); }
+.file-card-remove {
+  background: none; border: none;
+  font-size: 18px; color: var(--text-3);
+  cursor: pointer; padding: 4px;
+}
+.file-card-remove:hover { color: var(--error); }
+
+/* OCR Toggle */
+.ocr-toggle {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: var(--warning-light);
+  border: 1px solid rgba(255,125,0,0.2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+.ocr-toggle label { font-size: 14px; cursor: pointer; flex: 1; }
+.toggle-switch {
+  position: relative; width: 44px; height: 24px;
+  background: var(--border); border-radius: 12px;
+  cursor: pointer; transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle-switch.on { background: var(--primary); }
+.toggle-switch::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px;
+  background: white; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle-switch.on::after { transform: translateX(20px); }
+
+/* LLM Toggles（CN NER / OpenAI）*/
+.llm-toggle {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: rgba(22,93,255,0.06);
+  border: 1px solid rgba(22,93,255,0.2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.llm-toggle label { font-size: 13px; cursor: pointer; flex: 1; color: var(--text-2); }
+.llm-toggle label strong { color: var(--text); }
+.llm-toggle .llm-hint { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 500;
+  cursor: pointer; border: none;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary {
+  background: var(--primary); color: white;
+  box-shadow: 0 2px 6px rgba(22,93,255,0.3);
+}
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-outline {
+  background: white; color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.btn-outline:hover:not(:disabled) { background: var(--border-light); }
+.btn-success {
+  background: var(--success); color: white;
+  box-shadow: 0 2px 6px rgba(0,180,42,0.3);
+}
+.btn-block { width: 100%; }
+.btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+
+/* Findings */
+.findings-summary {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 18px;
+  background: var(--primary-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.findings-summary strong { color: var(--primary); }
+.entity-group { margin-bottom: 14px; }
+.entity-group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--border-light);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-size: 13px; font-weight: 500;
+}
+.entity-group-count {
+  font-size: 11px; padding: 2px 8px;
+  background: var(--primary); color: white;
+  border-radius: 10px;
+}
+.entity-list {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.entity-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.entity-item:last-child { border-bottom: none; }
+.entity-item input[type="checkbox"] {
+  width: 16px; height: 16px; margin-top: 2px;
+  accent-color: var(--primary);
+  cursor: pointer; flex-shrink: 0;
+}
+.entity-main { flex: 1; min-width: 0; }
+.entity-value {
+  display: block; font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px; word-break: break-all;
+}
+.entity-context {
+  margin-top: 3px; font-size: 11px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-style: italic; max-width: 420px;
+}
+.entity-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.entity-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  font-size: 11px; padding: 2px 8px; cursor: pointer; color: var(--text-3);
+  transition: all 0.15s;
+}
+.entity-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
+.entity-btn-del:hover { border-color: var(--error); color: var(--error); background: var(--error-light); }
+.entity-edit-input {
+  flex: 1; font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px; padding: 2px 6px;
+  border: 1px solid var(--primary); border-radius: 4px; outline: none;
+  background: var(--primary-bg);
+}
+
+/* Custom Entity Add */
+.add-entity-form {
+  display: flex; gap: 8px; align-items: center;
+  flex-wrap: wrap;
+}
+.add-entity-form select, .add-entity-form input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  outline: none;
+}
+.add-entity-form select:focus, .add-entity-form input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(22,93,255,0.1);
+}
+.add-entity-form select { min-width: 120px; }
+.add-entity-form input { flex: 1; min-width: 150px; }
+.custom-entity-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.custom-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px;
+  background: var(--primary-light);
+  border-radius: 14px;
+  font-size: 12px;
+  color: var(--primary);
+}
+.custom-tag button {
+  background: none; border: none;
+  color: var(--primary); cursor: pointer;
+  font-size: 14px; padding: 0; line-height: 1;
+}
+.custom-tag button:hover { color: var(--error); }
+
+/* Options */
+.options-row {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  margin-top: 16px; padding-top: 16px;
+  border-top: 1px solid var(--border-light);
+}
+.option-group label { font-size: 13px; color: var(--text-2); display: block; margin-bottom: 6px; }
+.radio-group { display: flex; gap: 10px; }
+.radio-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.radio-item:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+.radio-item input { display: none; }
+
+/* Results */
+.result-card {
+  text-align: center;
+  padding: 32px 24px;
+}
+.result-icon { font-size: 48px; margin-bottom: 12px; }
+.result-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.result-subtitle { font-size: 14px; color: var(--text-2); margin-bottom: 20px; }
+.result-stats {
+  display: flex; justify-content: center; gap: 32px;
+  margin-bottom: 24px;
+}
+.stat-item { text-align: center; }
+.stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
+.stat-label { font-size: 12px; color: var(--text-3); }
+.result-path {
+  display: block;
+  padding: 10px 16px;
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px; color: var(--text-2);
+  margin-bottom: 20px;
+  word-break: break-all;
+  text-align: left;
+}
+.result-path-label {
+  font-size: 11px; color: var(--text-3);
+  margin-bottom: 4px; font-family: inherit;
+}
+
+/* Mapping Table */
+.mapping-toggle {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; cursor: pointer;
+  font-size: 13px; color: var(--text-3);
+  margin-top: 16px; padding: 8px;
+}
+.mapping-toggle:hover { color: var(--primary); }
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.mapping-table th {
+  background: var(--border-light);
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 500;
+}
+.mapping-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* Loading */
+.loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 32px; color: var(--text-3); font-size: 14px;
+}
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Section Toggle */
+.section-toggle {
+  cursor: pointer; user-select: none;
+}
+.section-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+.section-toggle.open .arrow { transform: rotate(90deg); }
+
+/* Utilities */
+.hidden { display: none !important; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.text-center { text-align: center; }
+.text-error { color: var(--error); }
+.text-success { color: var(--success); }
+
+/* Alert */
+.alert {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.alert-error { background: var(--error-light); color: var(--error); }
+.alert-warning { background: var(--warning-light); color: var(--warning); }
+
+/* User Dict */
+.dict-entry {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.dict-entry:last-child { border-bottom: none; }
+.dict-entry-left { display: flex; align-items: center; gap: 8px; }
+.dict-type-badge {
+  font-size: 11px; padding: 2px 7px;
+  background: var(--primary-light); color: var(--primary);
+  border-radius: 10px;
+}
+.dict-remove-btn {
+  background: none; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1;
+}
+.dict-remove-btn:hover { color: var(--error); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-icon">&#128274;</div>
+    <div>
+      <h1>法律文档脱敏工具</h1>
+      <div style="font-size:11px;opacity:0.7;margin-top:2px;">by 黄灵宝同学</div>
+    </div>
+  </div>
+  <div class="header-badge">&#128737; 数据完全本地处理</div>
+</div>
+
+<div class="main">
+  <!-- Stepper -->
+  <div class="stepper">
+    <div class="step-item active" id="step-ind-1">
+      <div class="step-num">1</div>
+      <div class="step-label">上传文档</div>
+    </div>
+    <div class="step-divider" id="step-div-1"></div>
+    <div class="step-item" id="step-ind-2">
+      <div class="step-num">2</div>
+      <div class="step-label">审核实体</div>
+    </div>
+    <div class="step-divider" id="step-div-2"></div>
+    <div class="step-item" id="step-ind-3">
+      <div class="step-num">3</div>
+      <div class="step-label">完成输出</div>
+    </div>
+  </div>
+
+  <!-- Step 1: Upload -->
+  <div id="step-1">
+    <div class="card">
+      <div class="card-title">上传文档</div>
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-icon">&#128196;</div>
+        <div class="upload-text">拖拽文件到这里，或点击选择文件</div>
+        <div class="upload-hint">支持 PDF、Word、图片、文本文件，最大 50MB</div>
+        <div class="upload-formats">
+          <span class="format-badge">PDF</span>
+          <span class="format-badge">DOCX</span>
+          <span class="format-badge">DOC</span>
+          <span class="format-badge">TXT</span>
+          <span class="format-badge">JPG/PNG</span>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png,.bmp,.tiff,.gif,.webp">
+    </div>
+
+    <div class="card inbox-section">
+      <div class="card-title" style="cursor:pointer;user-select:none;" onclick="toggleInbox()">
+        <span class="arrow" id="inbox-arrow" style="transition:transform 0.2s;display:inline-block;transform:rotate(90deg);">&#9654;</span> 或从文件夹选择
+      </div>
+      <div id="inbox-content">
+        <div class="inbox-header">
+          <span style="font-size:13px;color:var(--text-2)">将文件放入工具目录下的文件夹：</span>
+          <span class="inbox-path" id="inbox-path">inbox/</span>
+        </div>
+        <div id="inbox-list"></div>
+        <div class="text-center mt-8">
+          <button class="btn btn-outline" onclick="refreshInbox()" style="font-size:12px;">&#8635; 刷新列表</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- File selected state -->
+    <div id="file-selected" class="hidden">
+      <div class="card">
+        <div class="card-title">已选文件</div>
+        <div class="file-card">
+          <div class="file-card-icon" id="file-icon">&#128196;</div>
+          <div class="file-card-info">
+            <div class="file-card-name" id="file-name"></div>
+            <div class="file-card-size" id="file-size"></div>
+          </div>
+          <button class="file-card-remove" onclick="resetUpload()" title="移除">&#10005;</button>
+        </div>
+
+        <div id="ocr-option" class="hidden">
+          <div class="ocr-toggle">
+            <span style="font-size:18px">&#128196;</span>
+            <label id="ocr-label">
+              <strong>PDF 文件</strong> - 启用 OCR 识别（扫描版必须开启）
+            </label>
+            <div class="toggle-switch" id="ocr-switch" onclick="toggleOCR()"></div>
+          </div>
+        </div>
+        <div id="ocr-scanned-notice" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#856404;">
+          &#9888;&#65039; <strong>检测到扫描版 PDF</strong>，已自动启用 OCR 识别。处理时间可能稍长，请耐心等待。
+        </div>
+
+        <!-- OCR 引擎选择（仅 OCR 开启时可见）-->
+        <div id="ocr-engine-option" class="hidden" style="margin-top:8px; padding:10px 14px; background:#f8f9fb; border:1px solid #e4e7ed; border-radius:8px;">
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:6px;">OCR 引擎</div>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="ocr-engine" value="rapidocr" checked> ⚡ RapidOCR <span style="color:var(--text-3);font-size:12px">（快，默认）</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="ocr-engine" value="paddleocr"> 🎯 PaddleOCR <span style="color:var(--text-3);font-size:12px">（复杂排版更准，慢）</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- LLM 补充检测层（可选）-->
+        <div style="margin-top:12px;">
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:6px;">
+            &#128302; 补充检测层（可选）&mdash; 首次启用会下载模型，之后离线推理
+          </div>
+          <div class="llm-toggle">
+            <span style="font-size:18px">&#127464;&#127475;</span>
+            <label>
+              <strong>中文 NER</strong>（CLUENER，~400MB）
+              <div class="llm-hint">补规则漏掉的中文人名/公司/地址，含复姓识别</div>
+            </label>
+            <div class="toggle-switch" id="cn-llm-switch" onclick="toggleCnLlm()"></div>
+          </div>
+          {% if enable_openai %}
+          <div class="llm-toggle">
+            <span style="font-size:18px">&#127482;&#127480;</span>
+            <label>
+              <strong>OpenAI privacy-filter</strong>（1.5B，~2.6GB）
+              <div class="llm-hint">补英文人名/英文地址/国际电话/API token（首次下载较慢）</div>
+            </label>
+            <div class="toggle-switch" id="llm-switch" onclick="toggleLlm()"></div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div id="analyze-error" class="hidden"></div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="analyzeDocument()" id="analyze-btn">
+            &#128269; 开始分析
+          </button>
+        </div>
+
+        <div id="analyzing" class="hidden">
+          <div class="loading">
+            <div class="spinner"></div>
+            <span id="analyzing-msg">正在分析文档，请稍候...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Review -->
+  <div id="step-2" class="hidden">
+    <div class="card">
+      <div class="card-title">检测到的敏感信息</div>
+      <div id="findings-summary" class="findings-summary"></div>
+      <div id="findings-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">手动添加实体</div>
+      <p style="font-size:13px;color:var(--text-2);margin-bottom:12px;">
+        如果有自动检测未覆盖的人名、公司名等，可以在此手动添加：
+      </p>
+      <div class="add-entity-form">
+        <select id="add-type">
+          <option value="person">人名</option>
+          <option value="company">公司名</option>
+          <option value="law_firm">律师事务所</option>
+          <option value="court">法院</option>
+          <option value="address">地址</option>
+          <option value="phone">号码</option>
+          <option value="bank_name">银行</option>
+          <option value="government">政府机关</option>
+          <option value="institution">机构</option>
+          <option value="other">其他</option>
+        </select>
+        <input type="text" id="add-name" placeholder="输入实体名称，如：张三" onkeydown="if(event.key==='Enter')addEntity()">
+        <button class="btn btn-primary" onclick="addEntity()" style="padding:8px 14px;">添加</button>
+      </div>
+      <div class="custom-entity-list" id="custom-entities"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">输出设置</div>
+      <div class="options-row">
+        <div class="option-group">
+          <label>输出格式（可多选）</label>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="checkbox" name="format" value="md"> MD
+            </label>
+            <label class="radio-item">
+              <input type="checkbox" name="format" value="docx" checked> DOCX
+            </label>
+            <label class="radio-item">
+              <input type="checkbox" name="format" value="pdf" checked> PDF
+            </label>
+          </div>
+          <div style="margin-top:6px;font-size:12px;color:var(--text-3);">
+            同源格式（DOCX→DOCX、PDF→PDF）会最大限度保留原样式；其余用仿宋/小四/1.5 倍行距模板。
+          </div>
+        </div>
+        <div class="option-group">
+          <label>掩码策略</label>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="strategy" value="placeholder" checked> 占位符 [PERSON_1]
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="strategy" value="partial"> 部分掩码 张**
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="anonymize-error" class="hidden"></div>
+
+      <div class="btn-group">
+        <button class="btn btn-outline" onclick="goToStep(1)">&#9664; 返回</button>
+        <button class="btn btn-primary" onclick="anonymizeDocument()" id="anonymize-btn">
+          &#128274; 执行脱敏
+        </button>
+      </div>
+
+      <div id="anonymizing" class="hidden">
+        <div class="loading">
+          <div class="spinner"></div>
+          <span>正在脱敏处理...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Results -->
+  <div id="step-3" class="hidden">
+    <div class="card result-card">
+      <div class="result-icon">&#9989;</div>
+      <div class="result-title">脱敏完成</div>
+      <div class="result-subtitle">文档已成功处理，所有敏感信息已替换</div>
+
+      <div class="result-stats">
+        <div class="stat-item">
+          <div class="stat-value" id="stat-entities">0</div>
+          <div class="stat-label">唯一实体</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-replacements">0</div>
+          <div class="stat-label">替换次数</div>
+        </div>
+      </div>
+
+      <div class="result-path">
+        <div class="result-path-label">&#128193; 输出文件：</div>
+        <div id="output-paths-list" style="font-size:12px;color:var(--text-3);"></div>
+      </div>
+
+      <div class="btn-group" id="download-btns" style="flex-wrap:wrap;">
+        <!-- 多格式下载按钮将由 renderResults 动态渲染 -->
+        <a class="btn btn-outline" id="download-mapping-btn" href="#">&#128203; 下载映射表</a>
+        <button class="btn btn-outline" onclick="toggleReAnonymize()" style="color:var(--warning);border-color:var(--warning);">&#9888; 仍有未脱敏内容</button>
+      </div>
+
+      <!-- 继续脱敏面板 -->
+      <div id="re-anonymize-panel" class="hidden" style="margin-top:20px;">
+        <div style="background:var(--warning-light);border:1px solid rgba(255,125,0,0.2);border-radius:var(--radius-sm);padding:16px;">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--warning);">&#128270; 补充脱敏</div>
+          <p style="font-size:13px;color:var(--text-2);margin-bottom:12px;">
+            请输入文件中仍需脱敏的内容（支持批量添加，每行一个）：
+          </p>
+          <div class="add-entity-form">
+            <select id="re-add-type">
+              <option value="person">人名</option>
+              <option value="company">公司名</option>
+              <option value="law_firm">律师事务所</option>
+              <option value="court">法院</option>
+              <option value="address">地址</option>
+              <option value="phone">号码</option>
+              <option value="bank_name">银行</option>
+              <option value="government">政府机关</option>
+              <option value="institution">机构</option>
+              <option value="other">其他</option>
+            </select>
+            <input type="text" id="re-add-name" placeholder="输入需脱敏的内容" onkeydown="if(event.key==='Enter')addReEntity()">
+            <button class="btn btn-primary" onclick="addReEntity()" style="padding:8px 14px;">添加</button>
+          </div>
+          <div class="custom-entity-list" id="re-entities-list" style="margin-top:10px;"></div>
+          <div id="re-anonymize-error" class="hidden" style="margin-top:10px;"></div>
+          <div style="margin-top:10px;padding:8px 0;border-top:1px solid rgba(255,125,0,0.15);">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-2);">
+              <input type="checkbox" id="save-to-dict-chk" style="width:15px;height:15px;accent-color:var(--primary);cursor:pointer;">
+              同时保存到个人词典（以后处理文件时自动识别这些词）
+            </label>
+          </div>
+          <div id="re-anonymizing" class="hidden">
+            <div class="loading">
+              <div class="spinner"></div>
+              <span>正在重新脱敏...</span>
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:14px;">
+            <button class="btn btn-primary" onclick="executeReAnonymize()" id="re-anonymize-btn" disabled>
+              &#128274; 继续脱敏
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mapping-toggle" onclick="toggleMapping()">
+        <span class="arrow" id="mapping-arrow">&#9654;</span> 查看映射详情
+      </div>
+      <div id="mapping-detail" class="hidden">
+        <table class="mapping-table">
+          <thead><tr><th>占位符/掩码</th><th>原始值</th><th>类型</th></tr></thead>
+          <tbody id="mapping-body"></tbody>
+        </table>
+      </div>
+
+      <div class="btn-group" style="margin-top:24px;">
+        <button class="btn btn-outline" onclick="startOver()">&#128260; 处理下一个文件</button>
+      </div>
+    </div>
+
+    <!-- 词典管理卡片 -->
+    <div class="card" id="dict-mgr-card">
+      <div class="card-title section-toggle" onclick="toggleDictManager()" id="dict-mgr-toggle">
+        <span>&#128218; 个人词典</span>
+        <span id="dict-count-badge" style="margin-left:auto;font-size:12px;color:var(--text-3);font-weight:400;"></span>
+        <span class="arrow" style="margin-left:8px;color:var(--text-3);">&#9654;</span>
+      </div>
+      <div id="dict-mgr-content" class="hidden">
+        <p style="font-size:13px;color:var(--text-2);margin-bottom:12px;">
+          词典中的词条在每次处理文件时自动作为检测目标，无需重复手动添加。
+        </p>
+        <div id="dict-entries-list" style="border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:12px;min-height:40px;">
+          <div style="text-align:center;padding:16px;color:var(--text-3);font-size:13px;">加载中...</div>
+        </div>
+        <button onclick="clearUserDict()" class="btn btn-outline" style="color:var(--error);border-color:var(--error);font-size:13px;">
+          &#128465; 清空词典
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== State ====================
+let state = {
+  sessionId: null,
+  fileName: '',
+  fileType: '',
+  isPdf: false,
+  useOcr: false,
+  useCnLlm: false,
+  useLlm: false,
+  findings: {},
+  typeNames: {},
+  customEntities: [],
+  excludedEntities: [],
+  currentStep: 1,
+};
+
+// ==================== Step Navigation ====================
+function goToStep(n) {
+  state.currentStep = n;
+  for (let i = 1; i <= 3; i++) {
+    document.getElementById('step-' + i).classList.toggle('hidden', i !== n);
+    const ind = document.getElementById('step-ind-' + i);
+    ind.className = 'step-item' + (i === n ? ' active' : i < n ? ' done' : '');
+  }
+  for (let i = 1; i <= 2; i++) {
+    document.getElementById('step-div-' + i).className = 'step-divider' + (i < n ? ' done' : '');
+  }
+  if (n === 3) loadUserDict();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ==================== Upload ====================
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+['dragenter', 'dragover'].forEach(e => {
+  dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); });
+});
+['dragleave', 'drop'].forEach(e => {
+  dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); });
+});
+dropZone.addEventListener('drop', ev => {
+  const files = ev.dataTransfer.files;
+  if (files.length > 0) uploadFile(files[0]);
+});
+fileInput.addEventListener('change', ev => {
+  if (ev.target.files.length > 0) uploadFile(ev.target.files[0]);
+});
+
+async function uploadFile(file) {
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    onFileReady(data);
+  } catch (e) { alert('上传失败: ' + e.message); }
+}
+
+function onFileReady(data) {
+  state.sessionId = data.session_id;
+  state.fileName = data.file_name;
+  state.fileType = data.file_type;
+  state.isPdf = data.is_pdf;
+
+  document.getElementById('file-name').textContent = data.file_name;
+  document.getElementById('file-size').textContent = formatSize(data.file_size) + ' · ' + data.file_type.toUpperCase();
+  document.getElementById('file-icon').textContent = data.is_pdf ? '\u{1F4C4}' : data.file_type === '.docx' ? '\u{1F4DD}' : '\u{1F4C3}';
+
+  document.getElementById('file-selected').classList.remove('hidden');
+  document.getElementById('drop-zone').classList.add('hidden');
+  document.querySelector('.inbox-section').classList.add('hidden');
+
+  // PDF OCR 提示
+  if (data.is_pdf || data.is_image) {
+    document.getElementById('ocr-option').classList.remove('hidden');
+    // 扫描版PDF自动开启OCR
+    if (data.is_scanned) {
+      state.useOcr = true;
+      document.getElementById('ocr-switch').classList.add('on');
+      document.getElementById('ocr-scanned-notice').classList.remove('hidden');
+    } else {
+      document.getElementById('ocr-scanned-notice').classList.add('hidden');
+    }
+  } else {
+    document.getElementById('ocr-option').classList.add('hidden');
+    document.getElementById('ocr-scanned-notice').classList.add('hidden');
+  }
+}
+
+function resetUpload() {
+  state.sessionId = null;
+  state.fileName = '';
+  state.useOcr = false;
+  state.useCnLlm = false;
+  state.useLlm = false;
+  document.getElementById('file-selected').classList.add('hidden');
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.querySelector('.inbox-section').classList.remove('hidden');
+  document.getElementById('ocr-switch').classList.remove('on');
+  document.getElementById('cn-llm-switch').classList.remove('on');
+  document.getElementById('llm-switch')?.classList.remove('on');
+  document.getElementById('ocr-scanned-notice').classList.add('hidden');
+  document.getElementById('analyze-error').classList.add('hidden');
+  fileInput.value = '';
+}
+
+function toggleOCR() {
+  state.useOcr = !state.useOcr;
+  document.getElementById('ocr-switch').classList.toggle('on', state.useOcr);
+  document.getElementById('ocr-engine-option').classList.toggle('hidden', !state.useOcr);
+}
+
+function toggleCnLlm() {
+  state.useCnLlm = !state.useCnLlm;
+  document.getElementById('cn-llm-switch').classList.toggle('on', state.useCnLlm);
+}
+
+function toggleLlm() {
+  state.useLlm = !state.useLlm;
+  document.getElementById('llm-switch')?.classList.toggle('on', state.useLlm);
+}
+
+// ==================== Inbox ====================
+let inboxOpen = true;
+
+// 页面加载时自动刷新 inbox
+document.addEventListener('DOMContentLoaded', () => { refreshInbox(); });
+
+function toggleInbox() {
+  inboxOpen = !inboxOpen;
+  document.getElementById('inbox-content').classList.toggle('hidden', !inboxOpen);
+  document.getElementById('inbox-arrow').style.transform = inboxOpen ? 'rotate(90deg)' : 'rotate(0deg)';
+  if (inboxOpen) refreshInbox();
+}
+
+async function refreshInbox() {
+  try {
+    const res = await fetch('/api/inbox');
+    const data = await res.json();
+    document.getElementById('inbox-path').textContent = data.inbox_path;
+
+    const list = document.getElementById('inbox-list');
+    if (data.files.length === 0) {
+      list.innerHTML = '<div class="inbox-empty">\u{1F4C2} 文件夹为空，请将需要脱敏的文件放入上述文件夹</div>';
+      return;
+    }
+    list.innerHTML = data.files.map(f => `
+      <div class="inbox-item" onclick="selectInboxFile('${f.name.replace(/'/g, "\\'")}')">
+        <div class="inbox-item-left">
+          <span class="inbox-item-icon">${f.is_pdf ? '\u{1F4C4}' : '\u{1F4C3}'}</span>
+          <div>
+            <div class="inbox-item-name">${escHtml(f.name)}</div>
+            <div class="inbox-item-meta">${formatSize(f.size)}</div>
+          </div>
+        </div>
+        <span style="color:var(--primary);font-size:13px;">选择 \u2192</span>
+      </div>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+async function selectInboxFile(filename) {
+  try {
+    const res = await fetch('/api/inbox/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    onFileReady(data);
+  } catch (e) { alert('选择文件失败: ' + e.message); }
+}
+
+// ==================== Analyze ====================
+async function analyzeDocument() {
+  document.getElementById('analyze-btn').disabled = true;
+  document.getElementById('analyzing').classList.remove('hidden');
+  document.getElementById('analyze-error').classList.add('hidden');
+  const llmMsg = state.useLlm
+    ? '正在分析文档（首次加载 OpenAI 模型需 10-20 秒）...'
+    : state.useCnLlm
+      ? '正在分析文档（首次加载中文 NER 模型需 5-10 秒）...'
+      : '正在分析文档，请稍候...';
+  document.getElementById('analyzing-msg').textContent = state.useOcr
+    ? '正在 OCR 识别，扫描版文件可能需要 1-2 分钟，请耐心等待...'
+    : llmMsg;
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: state.sessionId,
+        use_ocr: state.useOcr,
+        ocr_engine: (document.querySelector('input[name="ocr-engine"]:checked') || {}).value || 'rapidocr',
+        use_cn_llm: state.useCnLlm,
+        use_llm: state.useLlm,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      const errEl = document.getElementById('analyze-error');
+      errEl.className = 'alert alert-error';
+      errEl.textContent = data.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    state.findings = data.findings;
+    state.typeNames = data.type_names;
+    state.excludedEntities = [];
+
+    renderFindings(data);
+    goToStep(2);
+
+  } catch (e) {
+    const errEl = document.getElementById('analyze-error');
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '分析失败: ' + e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    document.getElementById('analyze-btn').disabled = false;
+    document.getElementById('analyzing').classList.add('hidden');
+  }
+}
+
+function renderFindings(data) {
+  document.getElementById('findings-summary').innerHTML =
+    `\u{1F50D} 共发现 <strong>${data.total_findings}</strong> 处敏感信息，涉及 <strong>${data.type_count}</strong> 种类型`;
+
+  // 存储可编辑的 findings 副本
+  state.editableFindings = {};
+  for (const [type, values] of Object.entries(data.findings)) {
+    state.editableFindings[type] = values.map(v => ({
+      original: v.text || v,
+      current:  v.text || v,
+      context:  v.context || null,
+      enabled: true
+    }));
+  }
+
+  rebuildFindingsUI();
+}
+
+function rebuildFindingsUI() {
+  const list = document.getElementById('findings-list');
+  let html = '';
+  let totalCount = 0;
+  let typeCount = 0;
+
+  for (const [type, items] of Object.entries(state.editableFindings)) {
+    if (items.length === 0) continue;
+    typeCount++;
+    const enabledCount = items.filter(i => i.enabled).length;
+    totalCount += enabledCount;
+    const typeName = state.typeNames[type] || type;
+    html += `<div class="entity-group">
+      <div class="entity-group-header">
+        <span>${escHtml(typeName)} (${type})</span>
+        <span class="entity-group-count">${items.length}</span>
+      </div>
+      <div class="entity-list">`;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const id = `chk_${type}_${i}`;
+      const ctxHtml = item.context
+        ? `<div class="entity-context">…${escHtml(item.context)}…</div>` : '';
+      html += `<div class="entity-item" id="ei_${type}_${i}">
+        <input type="checkbox" id="${id}" ${item.enabled ? 'checked' : ''} onchange="toggleEntityV2('${type}',${i},this.checked)">
+        <div class="entity-main">
+          <label class="entity-value" for="${id}">${escHtml(item.current)}</label>
+          ${ctxHtml}
+        </div>
+        <div class="entity-actions">
+          <button class="entity-btn" onclick="editEntity('${type}',${i})" title="编辑">编辑</button>
+          <button class="entity-btn entity-btn-del" onclick="deleteEntity('${type}',${i})" title="删除">删除</button>
+        </div>
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  list.innerHTML = html;
+
+  // 更新摘要
+  document.getElementById('findings-summary').innerHTML =
+    `\u{1F50D} 共发现 <strong>${totalCount}</strong> 处敏感信息，涉及 <strong>${typeCount}</strong> 种类型`;
+}
+
+function toggleEntityV2(type, idx, checked) {
+  state.editableFindings[type][idx].enabled = checked;
+  // 同步到 excludedEntities
+  const item = state.editableFindings[type][idx];
+  if (!checked) {
+    state.excludedEntities.push({ type, name: item.current });
+  } else {
+    state.excludedEntities = state.excludedEntities.filter(e => !(e.type === type && e.name === item.current));
+  }
+}
+
+function editEntity(type, idx) {
+  const item = state.editableFindings[type][idx];
+  const container = document.getElementById(`ei_${type}_${idx}`);
+  const oldVal = item.current;
+
+  container.innerHTML = `
+    <input type="checkbox" ${item.enabled ? 'checked' : ''} disabled style="opacity:0.5">
+    <input type="text" class="entity-edit-input" id="edit_${type}_${idx}" value="${escAttr(oldVal)}">
+    <div class="entity-actions">
+      <button class="entity-btn" onclick="saveEntity('${type}',${idx})" style="color:var(--success);border-color:var(--success);">保存</button>
+      <button class="entity-btn" onclick="rebuildFindingsUI()">取消</button>
+    </div>`;
+
+  const input = document.getElementById(`edit_${type}_${idx}`);
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveEntity(type, idx);
+    if (e.key === 'Escape') rebuildFindingsUI();
+  });
+}
+
+function saveEntity(type, idx) {
+  const input = document.getElementById(`edit_${type}_${idx}`);
+  const newVal = input.value.trim();
+  if (!newVal) return;
+
+  const item = state.editableFindings[type][idx];
+  const oldVal = item.current;
+
+  // 更新 excludedEntities 中的引用
+  if (!item.enabled) {
+    state.excludedEntities = state.excludedEntities.filter(e => !(e.type === type && e.name === oldVal));
+    state.excludedEntities.push({ type, name: newVal });
+  }
+
+  // 如果值变了，旧值要排除，新值作为自定义实体添加
+  if (newVal !== item.original) {
+    // 排除旧的自动检测结果
+    if (!state.excludedEntities.some(e => e.type === type && e.name === item.original)) {
+      state.excludedEntities.push({ type, name: item.original });
+    }
+    // 新值作为自定义实体
+    if (!state.customEntities.some(e => e.type === type && e.name === newVal)) {
+      state.customEntities.push({ type, name: newVal });
+      // 同步到后端
+      fetch('/api/entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: state.sessionId, action: 'add', entities: [{ type, name: newVal }] }),
+      });
+      renderCustomEntities();
+    }
+  }
+
+  item.current = newVal;
+  rebuildFindingsUI();
+}
+
+function deleteEntity(type, idx) {
+  const item = state.editableFindings[type][idx];
+  // 加入排除列表
+  if (!state.excludedEntities.some(e => e.type === type && e.name === item.current)) {
+    state.excludedEntities.push({ type, name: item.current });
+  }
+  if (item.current !== item.original) {
+    if (!state.excludedEntities.some(e => e.type === type && e.name === item.original)) {
+      state.excludedEntities.push({ type, name: item.original });
+    }
+  }
+  state.editableFindings[type].splice(idx, 1);
+  rebuildFindingsUI();
+}
+
+// ==================== Custom Entities ====================
+async function addEntity() {
+  const type = document.getElementById('add-type').value;
+  const name = document.getElementById('add-name').value.trim();
+  if (!name) return;
+
+  const entity = { type, name };
+  state.customEntities.push(entity);
+
+  // 通知后端
+  await fetch('/api/entities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: state.sessionId,
+      action: 'add',
+      entities: [entity],
+    }),
+  });
+
+  document.getElementById('add-name').value = '';
+  renderCustomEntities();
+}
+
+async function removeEntity(idx) {
+  const entity = state.customEntities[idx];
+  state.customEntities.splice(idx, 1);
+
+  await fetch('/api/entities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: state.sessionId,
+      action: 'remove',
+      entities: [entity],
+    }),
+  });
+
+  renderCustomEntities();
+}
+
+function renderCustomEntities() {
+  const el = document.getElementById('custom-entities');
+  if (state.customEntities.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = state.customEntities.map((e, i) => {
+    const typeName = state.typeNames[e.type] || e.type;
+    return `<span class="custom-tag">${escHtml(typeName)}: ${escHtml(e.name)}
+      <button onclick="removeEntity(${i})">\u00d7</button></span>`;
+  }).join('');
+}
+
+// ==================== Anonymize ====================
+async function anonymizeDocument() {
+  // 多格式勾选
+  const formats = Array.from(document.querySelectorAll('input[name="format"]:checked')).map(el => el.value);
+  if (formats.length === 0) {
+    const errEl = document.getElementById('anonymize-error');
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '请至少勾选一种输出格式';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const strategy = document.querySelector('input[name="strategy"]:checked').value;
+
+  document.getElementById('anonymize-btn').disabled = true;
+  document.getElementById('anonymizing').classList.remove('hidden');
+  document.getElementById('anonymize-error').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/anonymize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: state.sessionId,
+        output_format: formats,  // 数组
+        mask_strategy: strategy,
+        excluded_entities: state.excludedEntities,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      const errEl = document.getElementById('anonymize-error');
+      errEl.className = 'alert alert-error';
+      errEl.textContent = data.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    renderResults(data);
+    goToStep(3);
+
+  } catch (e) {
+    const errEl = document.getElementById('anonymize-error');
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '脱敏失败: ' + e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    document.getElementById('anonymize-btn').disabled = false;
+    document.getElementById('anonymizing').classList.add('hidden');
+  }
+}
+
+function renderResults(data) {
+  document.getElementById('stat-entities').textContent = data.total_matched;
+  document.getElementById('stat-replacements').textContent = data.replacements_made;
+
+  // 展示所有生成的输出文件路径
+  const pathsList = document.getElementById('output-paths-list');
+  const outputPaths = data.output_paths || {};
+  const fmtLabels = { md: 'Markdown', docx: 'Word', pdf: 'PDF', txt: '纯文本' };
+  if (Object.keys(outputPaths).length) {
+    pathsList.innerHTML = Object.entries(outputPaths)
+      .map(([fmt, p]) => `<div>• <b>${fmtLabels[fmt] || fmt.toUpperCase()}</b>: ${escHtml(p)}</div>`)
+      .join('');
+  } else if (data.output_path) {
+    pathsList.innerHTML = `<div>${escHtml(data.output_path)}</div>`;
+  }
+
+  // 每种格式一个下载按钮
+  const btnsContainer = document.getElementById('download-btns');
+  btnsContainer.innerHTML = '';
+  const icons = { md: '\u{1F4DD}', docx: '\u{1F4C4}', pdf: '\u{1F4D5}', txt: '\u{1F4C3}' };
+  for (const fmt of Object.keys(outputPaths)) {
+    const btn = document.createElement('a');
+    btn.className = 'btn btn-primary';
+    btn.href = `/api/download/${state.sessionId}?fmt=${fmt}`;
+    btn.innerHTML = `${icons[fmt] || '⬇'} 下载 ${(fmtLabels[fmt] || fmt).toUpperCase()}`;
+    btnsContainer.appendChild(btn);
+  }
+  // 映射表按钮
+  const mapBtn = document.createElement('a');
+  mapBtn.className = 'btn btn-outline';
+  mapBtn.href = '/api/download-mapping/' + state.sessionId;
+  mapBtn.innerHTML = '\u{1F4CB} 下载映射表';
+  btnsContainer.appendChild(mapBtn);
+  // "仍有未脱敏内容"按钮
+  const reBtn = document.createElement('button');
+  reBtn.className = 'btn btn-outline';
+  reBtn.style.color = 'var(--warning)';
+  reBtn.style.borderColor = 'var(--warning)';
+  reBtn.onclick = toggleReAnonymize;
+  reBtn.innerHTML = '⚠ 仍有未脱敏内容';
+  btnsContainer.appendChild(reBtn);
+
+  // 映射表
+  const body = document.getElementById('mapping-body');
+  let html = '';
+  for (const [placeholder, info] of Object.entries(data.mapping || {})) {
+    html += `<tr><td>${escHtml(placeholder)}</td><td>${escHtml(info.original)}</td><td>${escHtml(info.type)}</td></tr>`;
+  }
+  body.innerHTML = html || '<tr><td colspan="3" style="text-align:center;color:var(--text-3)">无映射记录</td></tr>';
+}
+
+function toggleMapping() {
+  const detail = document.getElementById('mapping-detail');
+  const arrow = document.getElementById('mapping-arrow');
+  detail.classList.toggle('hidden');
+  arrow.innerHTML = detail.classList.contains('hidden') ? '\u25b6' : '\u25bc';
+}
+
+// ==================== Re-Anonymize ====================
+let reEntities = [];
+
+function toggleReAnonymize() {
+  document.getElementById('re-anonymize-panel').classList.toggle('hidden');
+}
+
+function addReEntity() {
+  const type = document.getElementById('re-add-type').value;
+  const name = document.getElementById('re-add-name').value.trim();
+  if (!name) return;
+
+  // 支持逗号、顿号、空格分隔的批量输入
+  const names = name.split(/[,，、\s]+/).filter(n => n.length > 0);
+  for (const n of names) {
+    if (!reEntities.some(e => e.type === type && e.name === n)) {
+      reEntities.push({ type, name: n });
+    }
+  }
+
+  document.getElementById('re-add-name').value = '';
+  renderReEntities();
+}
+
+function removeReEntity(idx) {
+  reEntities.splice(idx, 1);
+  renderReEntities();
+}
+
+function renderReEntities() {
+  const el = document.getElementById('re-entities-list');
+  document.getElementById('re-anonymize-btn').disabled = reEntities.length === 0;
+  if (reEntities.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = reEntities.map((e, i) => {
+    const typeName = state.typeNames[e.type] || e.type;
+    return `<span class="custom-tag">${escHtml(typeName)}: ${escHtml(e.name)}
+      <button onclick="removeReEntity(${i})">\u00d7</button></span>`;
+  }).join('');
+}
+
+async function executeReAnonymize() {
+  if (reEntities.length === 0) return;
+
+  document.getElementById('re-anonymize-btn').disabled = true;
+  document.getElementById('re-anonymizing').classList.remove('hidden');
+  document.getElementById('re-anonymize-error').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/re-anonymize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: state.sessionId,
+        entities: reEntities,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      const errEl = document.getElementById('re-anonymize-error');
+      errEl.className = 'alert alert-error';
+      errEl.textContent = data.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    // 更新结果显示
+    renderResults(data);
+
+    // 如果勾选"保存到词典"，持久化这批实体
+    const saveToDict = document.getElementById('save-to-dict-chk').checked;
+    if (saveToDict && reEntities.length > 0) {
+      await fetch('/api/user-dict/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: reEntities }),
+      });
+      loadUserDict();  // 刷新词典显示
+    }
+
+    // 清空已添加的实体，隐藏面板
+    reEntities = [];
+    renderReEntities();
+    document.getElementById('save-to-dict-chk').checked = false;
+    document.getElementById('re-anonymize-panel').classList.add('hidden');
+
+    // 显示成功提示
+    const subtitle = document.querySelector('.result-subtitle');
+    subtitle.textContent = `已补充脱敏 ${data.new_entities_added} 个实体，文件已更新${saveToDict ? '，词条已保存到词典' : ''}`;
+    subtitle.style.color = 'var(--success)';
+
+  } catch (e) {
+    const errEl = document.getElementById('re-anonymize-error');
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '继续脱敏失败: ' + e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    document.getElementById('re-anonymize-btn').disabled = reEntities.length === 0;
+    document.getElementById('re-anonymizing').classList.add('hidden');
+  }
+}
+
+// ==================== User Dict ====================
+let userDictEntries = [];
+
+async function loadUserDict() {
+  try {
+    const res = await fetch('/api/user-dict');
+    const data = await res.json();
+    userDictEntries = data.entries || [];
+    const badge = document.getElementById('dict-count-badge');
+    if (badge) {
+      badge.textContent = userDictEntries.length > 0
+        ? `（${userDictEntries.length} 个词条）`
+        : '（空）';
+    }
+    renderDictEntries();
+  } catch (e) { console.error('加载词典失败', e); }
+}
+
+function toggleDictManager() {
+  const content = document.getElementById('dict-mgr-content');
+  const toggle = document.getElementById('dict-mgr-toggle');
+  content.classList.toggle('hidden');
+  toggle.classList.toggle('open');
+  if (!content.classList.contains('hidden')) loadUserDict();
+}
+
+function renderDictEntries() {
+  const el = document.getElementById('dict-entries-list');
+  if (!el) return;
+  if (userDictEntries.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-3);font-size:13px;">词典为空</div>';
+    return;
+  }
+  el.innerHTML = userDictEntries.map((e, i) => {
+    const typeName = state.typeNames[e.type] || e.type;
+    return `<div class="dict-entry">
+      <div class="dict-entry-left">
+        <span class="dict-type-badge">${escHtml(typeName)}</span>
+        <span>${escHtml(e.name)}</span>
+      </div>
+      <button class="dict-remove-btn" onclick="removeDictEntry(${i})" title="删除">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+async function removeDictEntry(idx) {
+  const entry = userDictEntries[idx];
+  await fetch('/api/user-dict/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries: [entry] }),
+  });
+  loadUserDict();
+}
+
+async function clearUserDict() {
+  if (!confirm('确定清空全部词典词条？')) return;
+  await fetch('/api/user-dict/clear', { method: 'POST' });
+  loadUserDict();
+}
+
+// ==================== Start Over ====================
+function startOver() {
+  state = {
+    sessionId: null, fileName: '', fileType: '', isPdf: false,
+    useOcr: false, useCnLlm: false, useLlm: false,
+    findings: {}, typeNames: {},
+    customEntities: [], excludedEntities: [], currentStep: 1,
+  };
+  document.getElementById('file-selected').classList.add('hidden');
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.querySelector('.inbox-section').classList.remove('hidden');
+  document.getElementById('ocr-switch').classList.remove('on');
+  document.getElementById('cn-llm-switch').classList.remove('on');
+  document.getElementById('llm-switch')?.classList.remove('on');
+  document.getElementById('custom-entities').innerHTML = '';
+  document.getElementById('mapping-detail').classList.add('hidden');
+  fileInput.value = '';
+  goToStep(1);
+}
+
+// ==================== Utilities ====================
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escAttr(s) {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h).toString(36);
+}
+</script>
+
+<div style="text-align:center;padding:24px 16px 32px;color:var(--text-3);font-size:12px;line-height:1.8;">
+  <div style="margin-bottom:4px;">法律文档脱敏工具 &middot; 完全本地运行 &middot; 不联网不上传</div>
+  <div>Made with &#10084;&#65039; by <strong style="color:var(--text-2);">黄灵宝同学</strong></div>
+</div>
+
+</body>
+</html>
