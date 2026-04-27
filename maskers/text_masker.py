@@ -243,6 +243,36 @@ class TextMasker:
                 return text[:3] + '*' * (len(text) - 6) + text[-3:]
             return '*' * len(text)
 
+        elif entity_type == 'person':
+            # 中文人名：保留姓氏，名字星号化（张三 → 张*；张三丰 → 张**）
+            if len(text) >= 2:
+                return text[0] + '*' * (len(text) - 1)
+            return text
+
+        elif entity_type in ('company', 'law_firm', 'institution', 'court',
+                              'government', 'bank_name'):
+            # 公司/机构：保留品牌首字 + 完整后缀，使读者能辨识"是个公司"但不知具体哪家
+            # 例：北京德恒（深圳）律师事务所 → 北*****律师事务所
+            #     深圳市壮辉物流有限公司 → 深*****有限公司
+            #     广东省深圳市龙岗区人民法院 → 广*****人民法院
+            suffixes = [
+                '中级人民法院', '高级人民法院', '人民法院', '人民检察院',
+                '律师事务所', '会计师事务所', '事务所',
+                '股份有限公司', '有限责任公司', '集团有限公司', '有限公司',
+                '集团公司', '管理委员会', '人民政府',
+                '公司', '集团', '股份', '银行', '司法厅', '司法部',
+            ]
+            for sfx in sorted(suffixes, key=len, reverse=True):
+                if text.endswith(sfx):
+                    core = text[:-len(sfx)]
+                    if len(core) >= 1:
+                        return core[0] + '*' * max(len(core) - 1, 1) + sfx
+                    return sfx
+            # 没有匹配后缀：保留首字 + 星号
+            if len(text) >= 2:
+                return text[0] + '*' * (len(text) - 1)
+            return '*' * len(text)
+
         # 默认：全部替换为星号
         return '*' * len(text)
 
