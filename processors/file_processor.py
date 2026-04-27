@@ -1045,14 +1045,13 @@ class FileProcessor:
                 placeholder_written = set()
 
                 def longest_common_substring(a, b, min_len=2):
-                    """在 b 中找 a 的最长子串。返回 (b_start, length) 或 None"""
-                    best = None  # (b_start, length)
+                    """在 b 中找 a 的最长子串。返回 (a_start, b_start, length) 或 None"""
                     for L in range(min(len(a), len(b)), min_len - 1, -1):
                         for i in range(len(a) - L + 1):
                             sub = a[i:i + L]
                             j = b.find(sub)
                             if j != -1:
-                                return (j, L)
+                                return (i, j, L)
                     return None
 
                 def get_distinctive_part(entity, etype):
@@ -1130,8 +1129,9 @@ class FileProcessor:
                         match = longest_common_substring(orig_norm, lt_norm, min_len=min_match_len)
                         if not match:
                             continue
-                        local_s, length = match
+                        ent_start, local_s, length = match
                         local_e = local_s + length
+                        ent_end = ent_start + length
 
                         # 反误报关卡：
                         # 如果实体有独特部分（如公司有品牌名），且当前行不含独特部分，
@@ -1168,24 +1168,49 @@ class FileProcessor:
                             fill="white", outline=None,
                         )
 
-                        # 占位符只在首次匹配该实体的行写
-                        if original not in placeholder_written:
-                            placeholder_written.add(original)
+                        # 决定该段写什么文字（关键）：
+                        #   1) partial 掩码（mask 长度 == 实体长度）：每行只写本行对应的 mask 切片
+                        #      例：实体"北京德恒(深圳)律师事务所" mask "北*******律师事务所"
+                        #          line1 命中实体 0-7 → 只写 "北*******"
+                        #          line2 命中实体 8-12 → 只写 "律师事务所"
+                        #   2) 占位符（如 [PERSON_1]）：只在第一行写完整占位符，其余行只擦不写
+                        same_length = len(masked) == len(orig_norm)
+                        if same_length:
+                            text_to_draw = masked[ent_start:ent_end]
+                        else:
+                            if original not in placeholder_written:
+                                placeholder_written.add(original)
+                                text_to_draw = masked
+                            else:
+                                text_to_draw = ''
+
+                        if text_to_draw:
                             line_h = ly1 - ly0
-                            font_size = max(10, int(line_h * 0.7))
-                            try:
-                                font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
-                            except Exception:
+                            avail_w = rect_x1 - rect_x0
+                            # 自适应字号：从行高 0.75 起，逐步缩小直到文字宽度 ≤ 95% 可用宽度
+                            font_size = max(10, int(line_h * 0.75))
+                            font = None
+                            text_w = text_h = 0
+                            for fs in range(font_size, 7, -1):
+                                try:
+                                    f = ImageFont.truetype(font_path, fs) if font_path else ImageFont.load_default()
+                                    bb = draw.textbbox((0, 0), text_to_draw, font=f)
+                                    tw = bb[2] - bb[0]
+                                    th = bb[3] - bb[1]
+                                except Exception:
+                                    f = ImageFont.load_default()
+                                    tw = fs * len(text_to_draw) // 2
+                                    th = fs
+                                if tw <= avail_w * 0.95:
+                                    font, text_w, text_h = f, tw, th
+                                    break
+                            if font is None:
                                 font = ImageFont.load_default()
-                            try:
-                                bbox = draw.textbbox((0, 0), masked, font=font)
-                                text_w = bbox[2] - bbox[0]
-                                text_h = bbox[3] - bbox[1]
-                            except Exception:
-                                text_w, text_h = font_size * len(masked) // 2, font_size
-                            tx = rect_x0 + max((rect_x1 - rect_x0 - text_w) / 2, 0)
+                                text_w, text_h = avail_w * 0.9, line_h * 0.5
+
+                            tx = rect_x0 + max((avail_w - text_w) / 2, 0)
                             ty = rect_y0 + max((rect_y1 - rect_y0 - text_h) / 2, 0)
-                            draw.text((tx, ty), masked, fill="black", font=font)
+                            draw.text((tx, ty), text_to_draw, fill="black", font=font)
 
                         page_redacted += 1
 
