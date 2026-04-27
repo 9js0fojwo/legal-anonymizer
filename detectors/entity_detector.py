@@ -570,11 +570,27 @@ class EntityDetector:
                     self.abbreviation_map[abbrev] = full_name
                     detected.add((abbrev, full_type))
                 else:
-                    # 全称未被检测到，按公司名处理
+                    # 全称未被检测到 → 看 abbrev 本身（往往是干净的专名）
                     if any(full_name.endswith(s) for s in ORG_SUFFIXES):
                         self.abbreviation_map[abbrev] = full_name
                         detected.add((full_name, 'company'))
                         detected.add((abbrev, 'company'))
+                    elif 2 <= len(abbrev) <= 8 and re.fullmatch(r'[一-龥]+', abbrev):
+                        # 兜底：abbrev 是 2-8 个纯中文字符（排除 GENERIC 之后的专名），
+                        # 即使全称不是标准 ORG_SUFFIX 结尾（如'智军殿'庙名、'故居研究会'机构）
+                        # 也加入为 institution 类型
+                        # 同时尝试从 full_name 尾部提取干净的实体名
+                        cjk_tail = re.search(r'[一-龥]{2,16}$', full_name)
+                        clean_full = cjk_tail.group(0) if cjk_tail else full_name
+                        # 去掉常见动词前缀
+                        for v in ('现受', '本受', '受', '本', '即', '即受'):
+                            if clean_full.startswith(v) and len(clean_full) > len(v) + 1:
+                                clean_full = clean_full[len(v):]
+                                break
+                        self.abbreviation_map[abbrev] = clean_full
+                        detected.add((abbrev, 'institution'))
+                        if clean_full and clean_full != abbrev and len(clean_full) >= 3:
+                            detected.add((clean_full, 'institution'))
 
         # ========== 4. 签名处连写人名拆分 ==========
         if self._should_detect('person', only_types, exclude_types):
