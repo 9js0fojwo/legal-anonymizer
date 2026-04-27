@@ -3,6 +3,7 @@ Legal Document Anonymizer - Main Class
 法律文档脱敏器 - 核心类
 """
 
+import re
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
@@ -158,6 +159,11 @@ class LegalAnonymizer:
         # 仅针对人名和公司/机构名；避免泛地名/职位导致炸量
         merged = self._expand_same_name_occurrences(text, merged)
 
+        # --- 第 6 步：品牌核心词扩展 ---
+        # 对识别到的公司/律所/机构名，提取去除前后缀后的核心品牌词（如"仁瑞""华商""启邦"）
+        # 在全文中查找其单独出现位置，加入实体列表
+        merged = self._add_distinctive_part_entities(text, merged)
+
         return merged
 
     def _write_format(
@@ -237,6 +243,132 @@ class LegalAnonymizer:
                     result.append((name, ty, idx))
                     existing_spans.append((idx, end))
                 i = idx + 1
+        return result
+
+    @staticmethod
+    def _add_distinctive_part_entities(text: str, entities: List) -> List:
+        """
+        从已识别的公司/律所/机构/法院/政府/银行实体中，提取去除前后缀的"核心品牌词"
+        （如 仁瑞、启邦、华商、环庆），在全文中查找单独出现的位置并补充为实体。
+
+        典型场景：检测到"仁瑞（深圳）融资租赁有限公司"后，文中独立出现的"仁瑞"也应被脱敏。
+        """
+        # 仅对公司/律所/机构/银行做品牌扩展。法院/政府名以行政区为主，不适合品牌化。
+        EXPAND_FROM = {"company", "law_firm", "institution", "bank_name"}
+
+        # 起始噪音词（先剥掉）：例如"案外人"、"原告"、"上述"等会污染品牌词头部
+        common_leading_noise = sorted([
+            '案外人', '第三人', '原告方', '被告方', '原告', '被告', '上述', '其',
+            '现受', '本受', '该', '即', '向', '于', '在',
+        ], key=len, reverse=True)
+
+        # 行政区前缀（按长度倒序剥离）
+        common_prefixes = sorted([
+            '中华人民共和国', '中华',
+            '北京市', '上海市', '天津市', '重庆市',
+            '广东省', '广州市', '深圳市', '佛山市', '东莞市', '中山市', '珠海市', '惠州市',
+            '浙江省', '杭州市', '宁波市', '温州市',
+            '江苏省', '南京市', '苏州市', '无锡市',
+            '山东省', '济南市', '青岛市',
+            '河北省', '河南省', '湖北省', '湖南省',
+            '福建省', '厦门市', '泉州市',
+            '四川省', '成都市',
+            '陕西省', '西安市',
+            '辽宁省', '大连市', '沈阳市',
+            # 深圳辖区
+            '福田区', '罗湖区', '南山区', '宝安区', '龙岗区', '龙华区', '盐田区',
+            '坪山区', '光明区', '大鹏新区', '前海区',
+            # 其它常见辖区
+            '海淀区', '朝阳区', '东城区', '西城区', '丰台区', '通州区',
+            '黄浦区', '徐汇区', '长宁区', '静安区', '浦东新区',
+            '天河区', '越秀区', '海珠区', '荔湾区', '白云区', '番禺区',
+            '北京', '上海', '天津', '重庆',
+            '广东', '广州', '深圳', '佛山', '东莞', '中山', '珠海', '惠州',
+            '浙江', '杭州', '宁波', '温州',
+            '江苏', '南京', '苏州', '无锡',
+            '山东', '济南', '青岛',
+            '河北', '河南', '湖北', '湖南',
+            '福建', '厦门', '泉州',
+            '四川', '成都',
+            '陕西', '西安',
+            '辽宁', '大连', '沈阳',
+            '中国',
+        ], key=len, reverse=True)
+
+        # 实体类型后缀（按长度倒序剥离）
+        common_suffixes = sorted([
+            '律师事务所', '会计师事务所', '事务所',
+            '股份有限公司', '有限责任公司', '集团有限公司', '有限公司',
+            '集团公司', '集团', '公司', '股份',
+            '人民检察院', '检察院',
+            '人民政府', '管理委员会', '管委会', '司法厅', '司法部',
+            '银行股份有限公司', '银行',
+            '融资租赁', '租赁',
+            '商贸', '建筑', '工程', '科技', '实业', '投资', '管理', '运营',
+            '大厦', '广场', '中心', '大楼', '大酒店', '酒店', '商务',
+        ], key=len, reverse=True)
+
+        # 不能作为独立品牌词的通用词（即使提取出来了也要丢掉）
+        BLACKLIST = {
+            '公司', '集团', '事务所', '律师事务所', '律师', '法院',
+            '银行', '中心', '大厦', '广场', '大楼', '政府', '检察院',
+            '租赁', '股份', '有限', '关联', '物业', '商务', '世纪',
+            '动产', '不动', '不动产', '动产权', '财产', '资产',
+            '关联公司', '上述', '涉案', '本案', '该案',
+            '工程', '建筑', '科技', '实业', '商贸', '管理', '运营',
+            '其', '该', '本', '向',
+        }
+
+        # 收集已有 span，避免重复添加
+        existing_spans = [(p, p + len(t)) for t, _, p in entities]
+
+        # 收集核心品牌 → 类型（保留首次出现的类型）
+        brands = {}
+        for ent_text, ent_type, _ in entities:
+            if ent_type not in EXPAND_FROM:
+                continue
+            s = re.sub(r'[（(].*?[)）]', '', ent_text).strip()
+            # 先剥头部噪音词（"案外人"/"上述"/"其"/"向"等连接词）
+            for noise in common_leading_noise:
+                if s.startswith(noise) and len(s) > len(noise) + 1:
+                    s = s[len(noise):]
+                    break
+            # 循环剥离前缀（行政区可能叠加：如"中华人民共和国广东省深圳市"）
+            while True:
+                stripped = False
+                for p in common_prefixes:
+                    if s.startswith(p) and len(s) > len(p) + 1:
+                        s = s[len(p):]
+                        stripped = True
+                        break
+                if not stripped:
+                    break
+            # 循环剥离后缀（实体后缀也可能叠加：如"融资租赁有限公司"先去"有限公司"再去"融资租赁"）
+            while True:
+                stripped = False
+                for sfx in common_suffixes:
+                    if s.endswith(sfx) and len(s) > len(sfx):
+                        s = s[:-len(sfx)]
+                        stripped = True
+                        break
+                if not stripped:
+                    break
+            s = s.strip()
+            if not (2 <= len(s) <= 6 and re.fullmatch(r'[一-龥]+', s)):
+                continue
+            if s in BLACKLIST:
+                continue
+            brands.setdefault(s, ent_type)
+
+        result = list(entities)
+        for brand, ty in brands.items():
+            for m in re.finditer(re.escape(brand), text):
+                start = m.start()
+                end = m.end()
+                if any(start < oe and end > os_ for os_, oe in existing_spans):
+                    continue
+                result.append((brand, ty, start))
+                existing_spans.append((start, end))
         return result
 
     @staticmethod

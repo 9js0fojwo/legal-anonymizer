@@ -1187,21 +1187,16 @@ class FileProcessor:
                             fill="white", outline=None,
                         )
 
-                        # 决定该段写什么文字（关键）：
-                        #   1) partial 掩码（mask 长度 == 实体长度）：每行只写本行对应的 mask 切片
-                        #      例：实体"北京德恒(深圳)律师事务所" mask "北*******律师事务所"
-                        #          line1 命中实体 0-7 → 只写 "北*******"
-                        #          line2 命中实体 8-12 → 只写 "律师事务所"
-                        #   2) 占位符（如 [PERSON_1]）：只在第一行写完整占位符，其余行只擦不写
+                        # 决定该段写什么文字：
+                        #   - partial 掩码（mask 长度 == 实体长度）：写本行对应的切片（如"张*"）
+                        #     这种掩码本身就有信息（"张*"显示有姓但不显示名），保留
+                        #   - 占位符模式（如 [PERSON_1]）：不写文字，纯白框
+                        #     用户要求："只要白框覆盖，不要 [PERSON_1] 等占位符文字"
                         same_length = len(masked) == len(orig_norm)
                         if same_length:
                             text_to_draw = masked[ent_start:ent_end]
                         else:
-                            if original not in placeholder_written:
-                                placeholder_written.add(original)
-                                text_to_draw = masked
-                            else:
-                                text_to_draw = ''
+                            text_to_draw = ''  # 占位符模式：只白框，不写文字
 
                         if text_to_draw:
                             line_h = ly1 - ly0
