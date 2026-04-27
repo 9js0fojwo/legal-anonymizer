@@ -554,8 +554,18 @@ body {
 </div>
 
 <div class="main">
-  <!-- Stepper -->
-  <div class="stepper">
+  <!-- Mode switch: 单文件模式 vs 批量模式 -->
+  <div style="display:flex;justify-content:center;gap:0;margin-bottom:18px;background:#f0f2f5;padding:4px;border-radius:10px;width:fit-content;margin-left:auto;margin-right:auto;">
+    <button id="mode-single-btn" class="btn"
+            style="padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;"
+            onclick="switchMode('single')">单文件处理</button>
+    <button id="mode-batch-btn" class="btn"
+            style="padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;"
+            onclick="switchMode('batch')">批量处理</button>
+  </div>
+
+  <!-- Stepper（仅单文件模式） -->
+  <div class="stepper" id="stepper-row">
     <div class="step-item active" id="step-ind-1">
       <div class="step-num">1</div>
       <div class="step-label">上传文档</div>
@@ -572,6 +582,70 @@ body {
     </div>
   </div>
 
+  <!-- ============== 批量处理面板 ============== -->
+  <div id="batch-panel" class="hidden">
+    <div class="card">
+      <div class="card-title">批量上传</div>
+      <div class="upload-zone" id="batch-drop-zone" onclick="document.getElementById('batch-file-input').click()">
+        <div class="upload-icon">&#128194;</div>
+        <div class="upload-text">拖拽多个文件到这里，或点击选择（可多选）</div>
+        <div class="upload-hint">支持同时处理多份 PDF/Word/图片/文本，单个最大 50MB</div>
+      </div>
+      <input type="file" id="batch-file-input" multiple accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png,.bmp,.tiff,.gif,.webp" style="display:none">
+    </div>
+
+    <div id="batch-options" class="card hidden">
+      <div class="card-title">脱敏选项</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;">
+          <span>掩码策略：</span>
+          <select id="batch-mask-strategy" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;">
+            <option value="placeholder">占位符（[PERSON_1]）</option>
+            <option value="partial">部分掩码（138****5678）</option>
+          </select>
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;">
+          <span>输出格式：</span>
+          <select id="batch-output-format" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;">
+            <option value="auto">自动（保持原格式）</option>
+            <option value="pdf">PDF</option>
+            <option value="docx">Word</option>
+            <option value="md">Markdown</option>
+            <option value="txt">纯文本</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div id="batch-file-list" class="card hidden">
+      <div class="card-title">
+        待处理文件 <span id="batch-count" style="font-size:13px;color:var(--text-2);font-weight:400;"></span>
+      </div>
+      <div id="batch-items"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-primary" id="batch-start-btn" onclick="startBatch()">开始批量脱敏</button>
+        <button class="btn btn-outline" onclick="resetBatch()">清空</button>
+      </div>
+    </div>
+
+    <div id="batch-progress" class="card hidden">
+      <div class="card-title">
+        处理进度 <span id="batch-progress-label" style="font-size:13px;color:var(--text-2);font-weight:400;"></span>
+      </div>
+      <div style="background:#f0f2f5;height:8px;border-radius:4px;overflow:hidden;margin-bottom:14px;">
+        <div id="batch-progress-bar" style="background:linear-gradient(90deg,#3b82f6,#10b981);height:100%;width:0%;transition:width 0.3s;"></div>
+      </div>
+      <div id="batch-progress-list"></div>
+      <div id="batch-actions" class="hidden" style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-primary" onclick="downloadBatch()">&#128229; 下载全部（zip）</button>
+        <button class="btn btn-outline" onclick="resetBatch()">处理新批次</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== 单文件模式（原 Step1/2/3） ============== -->
+
+  <div id="single-mode-panel">
   <!-- Step 1: Upload -->
   <div id="step-1">
     <div class="card">
@@ -881,6 +955,7 @@ body {
       </div>
     </div>
   </div>
+  </div><!-- /single-mode-panel -->
 </div>
 
 <script>
@@ -1611,6 +1686,162 @@ function startOver() {
   document.getElementById('mapping-detail').classList.add('hidden');
   fileInput.value = '';
   goToStep(1);
+}
+
+// ==================== Batch Mode ====================
+let batchState = { id: null, items: [], polling: null };
+
+function switchMode(mode) {
+  const single = document.getElementById('single-mode-panel');
+  const batch = document.getElementById('batch-panel');
+  const stepper = document.getElementById('stepper-row');
+  const sBtn = document.getElementById('mode-single-btn');
+  const bBtn = document.getElementById('mode-batch-btn');
+  if (mode === 'batch') {
+    single.classList.add('hidden'); stepper.classList.add('hidden');
+    batch.classList.remove('hidden');
+    sBtn.style.cssText = 'padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;';
+    bBtn.style.cssText = 'padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;';
+  } else {
+    single.classList.remove('hidden'); stepper.classList.remove('hidden');
+    batch.classList.add('hidden');
+    bBtn.style.cssText = 'padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;';
+    sBtn.style.cssText = 'padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;';
+  }
+}
+
+document.getElementById('batch-file-input').addEventListener('change', (e) => {
+  if (e.target.files.length) batchUpload(e.target.files);
+});
+
+const batchDz = document.getElementById('batch-drop-zone');
+batchDz.addEventListener('dragover', e => { e.preventDefault(); batchDz.style.background = '#f0f7ff'; });
+batchDz.addEventListener('dragleave', e => { e.preventDefault(); batchDz.style.background = ''; });
+batchDz.addEventListener('drop', e => {
+  e.preventDefault();
+  batchDz.style.background = '';
+  if (e.dataTransfer.files.length) batchUpload(e.dataTransfer.files);
+});
+
+async function batchUpload(files) {
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  try {
+    const r = await fetch('/api/batch/upload', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || '上传失败'); return; }
+    batchState.id = data.batch_id;
+    batchState.items = data.items;
+    renderBatchList();
+    document.getElementById('batch-file-list').classList.remove('hidden');
+    document.getElementById('batch-options').classList.remove('hidden');
+  } catch (e) {
+    alert('上传失败: ' + e.message);
+  }
+}
+
+function renderBatchList() {
+  document.getElementById('batch-count').textContent = `（共 ${batchState.items.length} 个）`;
+  const html = batchState.items.map(it => {
+    const sizeKb = (it.size / 1024).toFixed(1);
+    const status = it.status === 'rejected'
+      ? `<span style="color:#ef4444;">✗ ${it.error || '不支持'}</span>`
+      : `<span style="color:#10b981;">✓ 已就绪</span>`;
+    return `
+      <div style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;font-size:13px;">
+        <span style="flex:0 0 30px;color:#999;">#${it.idx}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(it.name)}</span>
+        <span style="flex:0 0 80px;color:#888;text-align:right;">${sizeKb} KB</span>
+        <span style="flex:0 0 100px;text-align:right;">${status}</span>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('batch-items').innerHTML = html;
+}
+
+async function startBatch() {
+  if (!batchState.id) return;
+  const strategy = document.getElementById('batch-mask-strategy').value;
+  const fmt = document.getElementById('batch-output-format').value;
+  const formats = fmt === 'auto' ? null : [fmt];
+  document.getElementById('batch-start-btn').disabled = true;
+  try {
+    const r = await fetch('/api/batch/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        batch_id: batchState.id,
+        mask_strategy: strategy,
+        output_formats: formats,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || '启动失败'); document.getElementById('batch-start-btn').disabled = false; return; }
+    document.getElementById('batch-progress').classList.remove('hidden');
+    document.getElementById('batch-file-list').classList.add('hidden');
+    pollBatch();
+  } catch (e) {
+    alert('启动失败: ' + e.message);
+    document.getElementById('batch-start-btn').disabled = false;
+  }
+}
+
+async function pollBatch() {
+  if (!batchState.id) return;
+  try {
+    const r = await fetch(`/api/batch/status/${batchState.id}`);
+    const data = await r.json();
+    if (!r.ok) return;
+    renderBatchProgress(data);
+    if (!data.all_finished) {
+      batchState.polling = setTimeout(pollBatch, 1500);
+    } else {
+      document.getElementById('batch-actions').classList.remove('hidden');
+    }
+  } catch (e) {
+    batchState.polling = setTimeout(pollBatch, 3000);
+  }
+}
+
+function renderBatchProgress(data) {
+  document.getElementById('batch-progress-bar').style.width = data.progress + '%';
+  document.getElementById('batch-progress-label').textContent = `（${data.done}/${data.total} 完成）`;
+  const html = data.items.map(it => {
+    let badge, color;
+    if (it.status === 'done') { badge = '✓ 完成'; color = '#10b981'; }
+    else if (it.status === 'error') { badge = '✗ 错误'; color = '#ef4444'; }
+    else if (it.status === 'processing') { badge = '⏳ ' + (it.stage === 'detect' ? '检测中' : '脱敏中'); color = '#3b82f6'; }
+    else if (it.status === 'rejected') { badge = '✗ 跳过'; color = '#999'; }
+    else { badge = '排队中'; color = '#999'; }
+    const detail = it.status === 'done'
+      ? `${it.total_matched} 实体，${it.replacements_made} 处替换${it.is_scanned ? ' · 扫描版' : ''}`
+      : (it.error ? escHtml(it.error.slice(0, 80)) : '');
+    return `
+      <div style="display:flex;align-items:center;padding:9px 10px;border-bottom:1px solid #f0f0f0;font-size:13px;">
+        <span style="flex:0 0 30px;color:#999;">#${it.idx}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(it.name)}</span>
+        <span style="flex:0 0 220px;color:#888;font-size:12px;">${detail}</span>
+        <span style="flex:0 0 100px;color:${color};text-align:right;font-weight:500;">${badge}</span>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('batch-progress-list').innerHTML = html;
+}
+
+function downloadBatch() {
+  if (!batchState.id) return;
+  window.location.href = `/api/batch/download/${batchState.id}`;
+}
+
+function resetBatch() {
+  if (batchState.polling) clearTimeout(batchState.polling);
+  batchState = { id: null, items: [], polling: null };
+  document.getElementById('batch-file-list').classList.add('hidden');
+  document.getElementById('batch-options').classList.add('hidden');
+  document.getElementById('batch-progress').classList.add('hidden');
+  document.getElementById('batch-actions').classList.add('hidden');
+  document.getElementById('batch-start-btn').disabled = false;
+  document.getElementById('batch-file-input').value = '';
 }
 
 // ==================== Utilities ====================

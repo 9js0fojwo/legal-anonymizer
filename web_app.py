@@ -743,6 +743,226 @@ def clear_user_dict():
     return jsonify({'entries': [], 'count': 0})
 
 
+# ==================== 批量处理 ====================
+
+import threading
+
+# 批次状态：batch_id -> {created_at, items: [...], done, total}
+batches: Dict[str, dict] = {}
+BATCH_TIMEOUT = 7200  # 2 小时
+
+
+def _cleanup_batches():
+    now = time.time()
+    expired = [bid for bid, b in batches.items() if now - b['created_at'] > BATCH_TIMEOUT]
+    for bid in expired:
+        # 不再清理输出文件，让用户来得及取回
+        del batches[bid]
+
+
+def _process_batch_item(batch_id: str, item: dict, options: dict):
+    """单个文件脱敏（在后台线程里跑）"""
+    try:
+        item['status'] = 'processing'
+        item['stage'] = 'detect'
+
+        anonymizer = LegalAnonymizer(
+            use_cn_llm=options.get('use_cn_llm', False),
+            use_llm=options.get('use_llm', False),
+        )
+        anonymizer.set_all_mask_strategy(options.get('mask_strategy', 'placeholder'))
+
+        # 注入用户词典
+        ud = load_user_dict()
+        if ud:
+            anonymizer.add_custom_entities(ud)
+
+        input_path = Path(item['file_path'])
+        output_stem = OUTPUT_DIR / f"batch_{batch_id}_{item['idx']:02d}_{input_path.stem}"
+
+        item['stage'] = 'anonymize'
+        formats = options.get('output_formats') or ['pdf' if input_path.suffix.lower() == '.pdf' else 'docx']
+        is_scanned = is_scanned_pdf(str(input_path)) if input_path.suffix.lower() == '.pdf' else False
+
+        result = anonymizer.anonymize_file(
+            input_path=str(input_path),
+            output_path=str(output_stem),
+            output_format=formats,
+            use_ocr=is_scanned,
+            ocr_engine=options.get('ocr_engine', 'rapidocr'),
+            save_text_backup=True,
+            save_mapping=True,
+        )
+        if 'error' in result:
+            item['status'] = 'error'
+            item['error'] = result['error']
+            return
+
+        info = result.get('result', {})
+        # 收集所有输出文件（output_pdf / output_docx / mapping_file / text_backup）
+        outputs = {}
+        for k, v in info.items():
+            if k in ('output_pdf', 'output_docx', 'output_md', 'output_txt', 'mapping_file', 'text_backup'):
+                outputs[k] = v
+        item['outputs'] = outputs
+        item['total_matched'] = info.get('total_matched', 0)
+        item['replacements_made'] = info.get('replacements_made', 0)
+        item['is_scanned'] = is_scanned
+        item['status'] = 'done'
+        item['stage'] = 'completed'
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        item['status'] = 'error'
+        item['error'] = str(e)
+    finally:
+        batch = batches.get(batch_id)
+        if batch:
+            batch['done'] = sum(1 for it in batch['items'] if it['status'] in ('done', 'error'))
+
+
+@app.route('/api/batch/upload', methods=['POST'])
+def batch_upload():
+    """批量上传文件，返回 batch_id 与每个文件的元信息"""
+    _cleanup_batches()
+    files = request.files.getlist('files')
+    if not files:
+        return jsonify({'error': '未选择文件'}), 400
+
+    batch_id = uuid.uuid4().hex[:10]
+    items = []
+    for idx, f in enumerate(files, 1):
+        if not f.filename:
+            continue
+        suffix = Path(f.filename).suffix.lower()
+        if suffix not in SUPPORTED_EXTENSIONS:
+            items.append({
+                'idx': idx, 'name': f.filename, 'size': 0,
+                'status': 'rejected', 'error': f'不支持的格式 {suffix}',
+                'file_path': None, 'outputs': {},
+            })
+            continue
+        safe_name = f"batch_{batch_id}_{idx:02d}_{f.filename}"
+        save_path = UPLOAD_DIR / safe_name
+        f.save(str(save_path))
+        items.append({
+            'idx': idx,
+            'name': f.filename,
+            'file_path': str(save_path),
+            'size': os.path.getsize(save_path),
+            'status': 'pending',
+            'stage': '',
+            'is_scanned': False,
+            'outputs': {},
+            'total_matched': 0,
+            'replacements_made': 0,
+            'error': None,
+        })
+
+    batches[batch_id] = {
+        'id': batch_id,
+        'created_at': time.time(),
+        'items': items,
+        'total': sum(1 for it in items if it['status'] == 'pending'),
+        'done': 0,
+        'started': False,
+    }
+    return jsonify({
+        'batch_id': batch_id,
+        'count': len(items),
+        'items': [
+            {'idx': it['idx'], 'name': it['name'], 'size': it['size'],
+             'status': it['status'], 'error': it.get('error')}
+            for it in items
+        ],
+    })
+
+
+@app.route('/api/batch/start', methods=['POST'])
+def batch_start():
+    """开始批量脱敏（异步，逐个跑）"""
+    data = request.get_json() or {}
+    batch_id = data.get('batch_id')
+    options = {
+        'mask_strategy': data.get('mask_strategy', 'placeholder'),
+        'output_formats': data.get('output_formats') or None,
+        'use_cn_llm': bool(data.get('use_cn_llm', False)),
+        'use_llm': bool(data.get('use_llm', False)),
+        'ocr_engine': data.get('ocr_engine', 'rapidocr'),
+    }
+    batch = batches.get(batch_id)
+    if not batch:
+        return jsonify({'error': '批次不存在或已过期'}), 404
+    if batch['started']:
+        return jsonify({'error': '批次已开始'}), 400
+
+    batch['started'] = True
+
+    def _run():
+        for it in batch['items']:
+            if it['status'] == 'pending':
+                _process_batch_item(batch_id, it, options)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'status': 'started', 'batch_id': batch_id, 'total': batch['total']})
+
+
+@app.route('/api/batch/status/<batch_id>', methods=['GET'])
+def batch_status(batch_id):
+    batch = batches.get(batch_id)
+    if not batch:
+        return jsonify({'error': '批次不存在或已过期'}), 404
+    return jsonify({
+        'batch_id': batch_id,
+        'total': batch['total'],
+        'done': batch['done'],
+        'progress': round(batch['done'] / batch['total'] * 100, 1) if batch['total'] else 0,
+        'all_finished': batch['done'] >= batch['total'],
+        'items': [
+            {
+                'idx': it['idx'], 'name': it['name'], 'status': it['status'],
+                'stage': it.get('stage', ''),
+                'error': it.get('error'),
+                'is_scanned': it.get('is_scanned', False),
+                'total_matched': it.get('total_matched', 0),
+                'replacements_made': it.get('replacements_made', 0),
+                'outputs': it.get('outputs', {}),
+            }
+            for it in batch['items']
+        ],
+    })
+
+
+@app.route('/api/batch/download/<batch_id>', methods=['GET'])
+def batch_download(batch_id):
+    """打包下载整个批次的所有输出文件为 zip"""
+    import zipfile, io
+    batch = batches.get(batch_id)
+    if not batch:
+        return jsonify({'error': '批次不存在或已过期'}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for it in batch['items']:
+            if it['status'] != 'done':
+                continue
+            stem = Path(it['name']).stem
+            for kind, path in (it.get('outputs') or {}).items():
+                if not path or not Path(path).exists():
+                    continue
+                # 在 zip 内的目录结构：原文件名/{kind}.{ext}
+                arc_name = f"{stem}/{Path(path).name}"
+                zf.write(path, arc_name)
+    buf.seek(0)
+    fname = f'batch_{batch_id}_脱敏结果.zip'
+    from flask import Response
+    return Response(
+        buf.getvalue(),
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
 def find_free_port(start=8080, end=8099):
     """找到一个可用端口"""
     import socket

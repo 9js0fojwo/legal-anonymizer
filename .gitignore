@@ -80,3 +80,4 @@ Thumbs.db
 
 # 模型预下载完成标志（每个用户机器自己生成）
 .models_downloaded
+test/sweep_results/
