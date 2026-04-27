@@ -168,32 +168,41 @@ class LegalAnonymizer:
         input_suffix: str,
         anonymized_content: str,
         use_ocr: bool,
+        ocr_engine: str = 'rapidocr',
     ) -> List[Tuple[str, str]]:
         """
         按目标格式输出一份文件。优先级：
           - fmt=docx 且源为 docx → 原地替换（完美保留格式）
-          - fmt=pdf  且源为 pdf  → 原地 redact（保留布局/盖章）
+          - fmt=pdf  且源为文字层 PDF → 原地 redact（保留布局/盖章）
+          - fmt=pdf  且源为扫描版 PDF → 视觉脱敏（OCR + 像素 redact，保留扫描版样式）
           - 其它情况走 processor.write_file 用回退模板（仿宋/小四/1.5x）
         """
         fmt = (fmt or '').lower()
         target_path = output_path.with_suffix('.' + fmt) if fmt in ('md', 'pdf', 'docx', 'txt') else output_path
 
-        # docx → docx 原地
-        if fmt == 'docx' and input_suffix == '.docx' and not use_ocr:
+        # docx → docx 原地（DOCX 不需要 OCR，直接走 XML 替换）
+        if fmt == 'docx' and input_suffix == '.docx':
             if self.processor.anonymize_docx_inplace(
                 str(input_path), str(target_path), self.masker.mapping
             ):
                 return [('output_docx', str(target_path))]
-            # 失败回退
             return self.processor.write_file(anonymized_content, str(target_path), 'docx')
 
-        # pdf → pdf 原地 redact
-        if fmt == 'pdf' and input_suffix == '.pdf' and not use_ocr:
-            if self.processor.anonymize_pdf_inplace(
-                str(input_path), str(target_path), self.masker.mapping
-            ):
-                return [('output_pdf', str(target_path))]
-            # 失败回退
+        # pdf → pdf
+        if fmt == 'pdf' and input_suffix == '.pdf':
+            if use_ocr:
+                # 扫描版 PDF：图像视觉脱敏（保留原页面样式）
+                if self.processor.anonymize_scanned_pdf_inplace(
+                    str(input_path), str(target_path), self.masker.mapping, ocr_engine
+                ):
+                    return [('output_pdf', str(target_path))]
+            else:
+                # 文字层 PDF：传统 redact（保留所有原格式）
+                if self.processor.anonymize_pdf_inplace(
+                    str(input_path), str(target_path), self.masker.mapping
+                ):
+                    return [('output_pdf', str(target_path))]
+            # 两条路径都失败时回退到模板
             return self.processor.write_file(anonymized_content, str(target_path), 'pdf')
 
         # 其它：回退到模板输出
@@ -482,6 +491,7 @@ class LegalAnonymizer:
                     input_suffix=input_suffix,
                     anonymized_content=anonymized_content,
                     use_ocr=use_ocr,
+                    ocr_engine=ocr_engine,
                 )
                 saved_files.extend(main_files)
 

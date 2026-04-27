@@ -875,6 +875,157 @@ class FileProcessor:
                 occurrences.append(rs)
         return occurrences
 
+    def anonymize_scanned_pdf_inplace(
+        self, input_path: str, output_path: str, mapping: dict, ocr_engine: str = 'rapidocr'
+    ) -> bool:
+        """
+        扫描版 PDF 视觉脱敏（保留原页面图像，只把敏感字位置盖白底+占位符）
+
+        与 anonymize_pdf_inplace 的区别：
+          - 那个针对**文字层 PDF**：直接 redact 文字对象，保留所有原格式
+          - 这个针对**扫描版 PDF**：原"文字"是图像内容，需要先 OCR 拿到字符位置，
+            再用 PDF_REDACT_IMAGE_PIXELS 擦除底层图像并覆盖占位符
+
+        效果：输出 PDF 看上去和原扫描版几乎一样（保留盖章/签名/页眉/纸张底色），
+        只有敏感字处变成白色色块上的 "[PERSON_1]" 等占位符。
+
+        Args:
+            input_path: 源扫描 PDF
+            output_path: 输出脱敏后 PDF
+            mapping: TextMasker.mapping，{(etype, original): placeholder, ...}
+            ocr_engine: OCR 引擎，目前仅支持 'rapidocr'（PaddleOCR 不返回 box 数据）
+        """
+        if not HAS_PYMUPDF or not HAS_PIL:
+            return False
+        if not HAS_RAPIDOCR:
+            print("  ⚠️ 扫描版 PDF 视觉脱敏需要 RapidOCR，请安装：pip install rapidocr")
+            return False
+
+        try:
+            import fitz as _fitz
+            import numpy as np
+            import time as _time
+
+            replacements = {}
+            for (etype, original), masked in mapping.items():
+                if original and masked and len(original) >= 1:
+                    replacements[original] = masked
+            if not replacements:
+                # 无敏感实体则直接复制
+                doc = _fitz.open(input_path)
+                doc.save(output_path)
+                doc.close()
+                return True
+
+            # 长串优先（避免 "张三" 先匹配到 "张三李四" 的子串）
+            sorted_originals = sorted(replacements.keys(), key=len, reverse=True)
+
+            doc = _fitz.open(input_path)
+            page_count = doc.page_count
+            ocr = self._get_rapidocr()
+            total_redacted = 0
+
+            print(f"[视觉脱敏] 共 {page_count} 页扫描版 PDF，正在逐页处理...", flush=True)
+
+            for page_num, page in enumerate(doc, 1):
+                t0 = _time.time()
+
+                # 渲染 150 DPI 给 OCR
+                mat = _fitz.Matrix(2.08, 2.08)
+                pix = page.get_pixmap(matrix=mat)
+                img_array = np.array(
+                    Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                )
+                pix = None  # 早释放
+
+                # OCR 拿 box
+                result = ocr(img_array)
+                if not result or not result.txts or result.boxes is None:
+                    print(f"  第 {page_num}/{page_count} 页 OCR 无结果", flush=True)
+                    continue
+
+                # 反向矩阵：图像像素 → PDF 坐标
+                inv = ~mat
+
+                # 在每行文字里查敏感词
+                page_redacted = 0
+                for line_text, line_box in zip(result.txts, result.boxes):
+                    # line_box: 4 corners [(x,y), ...]
+                    box_xs = [float(p[0]) for p in line_box]
+                    box_ys = [float(p[1]) for p in line_box]
+                    line_x0_px = min(box_xs)
+                    line_x1_px = max(box_xs)
+                    line_y0_px = min(box_ys)
+                    line_y1_px = max(box_ys)
+                    line_w_px = max(line_x1_px - line_x0_px, 1)
+
+                    # 跟踪该行已处理字符区间，避免重叠 redact
+                    handled = []
+                    for original in sorted_originals:
+                        masked = replacements[original]
+                        search_from = 0
+                        while True:
+                            idx = line_text.find(original, search_from)
+                            if idx == -1:
+                                break
+                            end = idx + len(original)
+                            # 重叠检查
+                            if any(s < end and idx < e for s, e in handled):
+                                search_from = idx + 1
+                                continue
+                            handled.append((idx, end))
+
+                            # 估算敏感子串在 box 中的像素 sub-rect（按字符均分）
+                            n = max(len(line_text), 1)
+                            r0 = idx / n
+                            r1 = end / n
+                            sub_x0_px = line_x0_px + r0 * line_w_px
+                            sub_x1_px = line_x0_px + r1 * line_w_px
+
+                            # 转 PDF 坐标
+                            p0 = _fitz.Point(sub_x0_px, line_y0_px) * inv
+                            p1 = _fitz.Point(sub_x1_px, line_y1_px) * inv
+                            rect = _fitz.Rect(
+                                min(p0.x, p1.x), min(p0.y, p1.y),
+                                max(p0.x, p1.x), max(p0.y, p1.y),
+                            )
+                            # 略微扩大保证完全覆盖原字
+                            rect.x0 -= 1.0
+                            rect.y0 -= 1.0
+                            rect.x1 += 1.0
+                            rect.y1 += 1.0
+
+                            fontsize = max(7, min(13, rect.height * 0.7))
+                            page.add_redact_annot(
+                                rect,
+                                text=masked,
+                                fontname='china-s',
+                                fontsize=fontsize,
+                                text_color=(0, 0, 0),
+                                fill=(1, 1, 1),
+                                align=_fitz.TEXT_ALIGN_LEFT,
+                            )
+                            page_redacted += 1
+                            search_from = end
+
+                # 关键：images=PDF_REDACT_IMAGE_PIXELS 让 PyMuPDF 把命中区域的图像
+                # 像素也涂成白色（默认只擦文字对象，对扫描版无效）
+                page.apply_redactions(images=_fitz.PDF_REDACT_IMAGE_PIXELS)
+
+                total_redacted += page_redacted
+                elapsed = _time.time() - t0
+                print(f"  第 {page_num}/{page_count} 页：脱敏 {page_redacted} 处，耗时 {elapsed:.1f}s", flush=True)
+
+            print(f"[视觉脱敏] 完成，共脱敏 {total_redacted} 处", flush=True)
+
+            doc.save(output_path, deflate=True, garbage=3)
+            doc.close()
+            return True
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return False
+
     def write_file(self, text: str, output_path: str, output_format: str = 'auto') -> List[Tuple[str, str]]:
         """
         写入文件

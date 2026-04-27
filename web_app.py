@@ -443,6 +443,7 @@ def anonymize_document():
                 input_suffix=input_suffix,
                 anonymized_content=anonymized_text,
                 use_ocr=session.get('use_ocr', False),
+                ocr_engine=session.get('ocr_engine', 'rapidocr'),
             )
             saved_files.extend(files)
 
@@ -579,6 +580,7 @@ def re_anonymize_document():
                 input_suffix=input_suffix,
                 anonymized_content=anonymized_text,
                 use_ocr=session.get('use_ocr', False),
+                ocr_engine=session.get('ocr_engine', 'rapidocr'),
             )
             saved_files.extend(files)
 
