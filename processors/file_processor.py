@@ -1054,6 +1054,25 @@ class FileProcessor:
                                 return (i, j, L)
                     return None
 
+                def char_width_weight(c):
+                    """估算字符宽度权重：CJK = 2，半角 = 1"""
+                    if '一' <= c <= '鿿':
+                        return 2.0  # CJK 汉字
+                    if '　' <= c <= '〿' or '＀' <= c <= '￯':
+                        return 2.0  # CJK 标点 / 全角
+                    return 1.0  # 半角 ASCII / 数字 / 标点
+
+                def pixel_offset_in_line(text, char_idx, line_x0, line_w):
+                    """按 CJK 双倍宽权重，从 char_idx 字符位置算到像素 X"""
+                    if not text:
+                        return line_x0
+                    weights = [char_width_weight(c) for c in text]
+                    total = sum(weights)
+                    if total <= 0:
+                        return line_x0
+                    cum = sum(weights[:char_idx])
+                    return line_x0 + (cum / total) * line_w
+
                 def get_distinctive_part(entity, etype):
                     """提取实体里的'品牌/独特识别部分'，去掉通用前后缀"""
                     import re as _re
@@ -1152,10 +1171,10 @@ class FileProcessor:
                             continue
                         line_handled[li].append((local_s, local_e))
 
-                        n = max(len(lt), 1)
                         line_w = max(lx1 - lx0, 1)
-                        sub_x0 = lx0 + (local_s / n) * line_w
-                        sub_x1 = lx0 + (local_e / n) * line_w
+                        # 用 CJK 双倍宽权重精确算位置（避免英中混排时位置偏移）
+                        sub_x0 = pixel_offset_in_line(lt, local_s, lx0, line_w)
+                        sub_x1 = pixel_offset_in_line(lt, local_e, lx0, line_w)
 
                         pad_x, pad_y = 2, 2
                         rect_x0 = sub_x0 - pad_x
