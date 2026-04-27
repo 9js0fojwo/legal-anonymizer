@@ -47,6 +47,14 @@ try:
 except ImportError:
     HAS_RAPIDOCR = False
 
+
+def _io_bytes_png(pil_image) -> bytes:
+    """PIL Image → PNG bytes，避免每次写临时文件"""
+    import io as _io
+    buf = _io.BytesIO()
+    pil_image.save(buf, format='PNG')
+    return buf.getvalue()
+
 try:
     from paddleocr import PaddleOCR as _PaddleOCR
     HAS_PADDLEOCR = True
@@ -906,10 +914,13 @@ class FileProcessor:
             import numpy as np
             import time as _time
 
+            # 保留 entity_type 信息（用于"独特识别部分"判断）
             replacements = {}
+            entity_types = {}  # original -> type
             for (etype, original), masked in mapping.items():
                 if original and masked and len(original) >= 1:
                     replacements[original] = masked
+                    entity_types[original] = etype
             if not replacements:
                 # 无敏感实体则直接复制
                 doc = _fitz.open(input_path)
@@ -927,90 +938,261 @@ class FileProcessor:
 
             print(f"[视觉脱敏] 共 {page_count} 页扫描版 PDF，正在逐页处理...", flush=True)
 
+            # 关键：用 PIL 直接在图像上画 redact，避免 PDF 旋转坐标转换问题
+            from PIL import ImageDraw, ImageFont
+
+            # 找系统中文字体（用于在 PIL 上绘占位符）
+            font_path = None
+            for cand in (
+                '/System/Library/Fonts/PingFang.ttc',
+                '/System/Library/Fonts/STHeiti Light.ttc',
+                '/System/Library/Fonts/Hiragino Sans GB.ttc',
+                'C:/Windows/Fonts/simhei.ttf',
+                'C:/Windows/Fonts/msyh.ttc',
+                '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            ):
+                if os.path.exists(cand):
+                    font_path = cand
+                    break
+
+            # 输出新 PDF（每页用脱敏后的图像组装）
+            out_doc = _fitz.open()
+
             for page_num, page in enumerate(doc, 1):
                 t0 = _time.time()
 
-                # 渲染 150 DPI 给 OCR
-                mat = _fitz.Matrix(2.08, 2.08)
+                # 渲染 200 DPI（用作输出的图像，质量优先）
+                render_dpi = 200
+                scale = render_dpi / 72
+                mat = _fitz.Matrix(scale, scale)
                 pix = page.get_pixmap(matrix=mat)
-                img_array = np.array(
-                    Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                )
-                pix = None  # 早释放
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img_array = np.array(img)
+                pix = None
 
-                # OCR 拿 box
+                # OCR
                 result = ocr(img_array)
                 if not result or not result.txts or result.boxes is None:
-                    print(f"  第 {page_num}/{page_count} 页 OCR 无结果", flush=True)
+                    # 没识别到东西，原图直接放回
+                    new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
+                    img_bytes = _io_bytes_png(img)
+                    new_page.insert_image(new_page.rect, stream=img_bytes)
+                    print(f"  第 {page_num}/{page_count} 页 OCR 无结果，原图放回", flush=True)
                     continue
 
-                # 反向矩阵：图像像素 → PDF 坐标
-                inv = ~mat
+                # 在 PIL 画布上作画
+                draw = ImageDraw.Draw(img)
 
-                # 在每行文字里查敏感词
+                # 关键：按"视觉行"分组排序后再拼接，避免 OCR 把同一行拆成左右两段后顺序错乱
+                raw_lines = []
+                for li, (line_text, line_box) in enumerate(zip(result.txts, result.boxes)):
+                    bxs = [float(p[0]) for p in line_box]
+                    bys = [float(p[1]) for p in line_box]
+                    raw_lines.append({
+                        'text': line_text,
+                        'x0': min(bxs), 'x1': max(bxs),
+                        'y0': min(bys), 'y1': max(bys),
+                        'y_center': (min(bys) + max(bys)) / 2,
+                        'h': max(bys) - min(bys),
+                    })
+
+                # 按 y_center 排，y 容差 = 平均行高 × 0.5 内视为同一视觉行
+                raw_lines.sort(key=lambda L: L['y_center'])
+                avg_h = sum(L['h'] for L in raw_lines) / max(len(raw_lines), 1)
+                tolerance = max(avg_h * 0.5, 5)
+                groups = []
+                cur_group = []
+                last_yc = None
+                for L in raw_lines:
+                    if last_yc is None or abs(L['y_center'] - last_yc) <= tolerance:
+                        cur_group.append(L)
+                    else:
+                        groups.append(cur_group)
+                        cur_group = [L]
+                    last_yc = L['y_center']
+                if cur_group:
+                    groups.append(cur_group)
+                # 每组内按 x0 排序（左→右），组间已按 y 排好
+                ordered_lines = []
+                for grp in groups:
+                    grp.sort(key=lambda L: L['x0'])
+                    ordered_lines.extend(grp)
+
+                # 跨行匹配用拼接文本
+                line_specs = []  # [(line_text, x0, x1, y0, y1, char_start_global)]
+                joined = ""
+                for L in ordered_lines:
+                    char_start = len(joined)
+                    line_specs.append((
+                        L['text'], L['x0'], L['x1'], L['y0'], L['y1'], char_start,
+                    ))
+                    joined += L['text']
+
+                # 全/半角等价规范化（OCR 容易把 ( 识为 (，反之亦然）
+                def normalize(s):
+                    return s.translate(str.maketrans('()[]【】《》＜＞，。；：！？',
+                                                       '()[]<><><>,.;:!?'))
+                joined_norm = normalize(joined)
+
+                # === 策略：每行单独匹配实体的子串（避免依赖跨行拼接顺序）===
+                # 对每个实体：遍历 OCR 每一行，找该行中包含的实体的最长子串。
+                # 这样无论 OCR 怎么切分（横切、竖切、左右分段），任何在该行可见的
+                # 实体片段都会被遮住，且 OCR 错位 / 顺序乱不影响结果。
                 page_redacted = 0
-                for line_text, line_box in zip(result.txts, result.boxes):
-                    # line_box: 4 corners [(x,y), ...]
-                    box_xs = [float(p[0]) for p in line_box]
-                    box_ys = [float(p[1]) for p in line_box]
-                    line_x0_px = min(box_xs)
-                    line_x1_px = max(box_xs)
-                    line_y0_px = min(box_ys)
-                    line_y1_px = max(box_ys)
-                    line_w_px = max(line_x1_px - line_x0_px, 1)
+                # 每行已遮区间 [(line_idx, char_start, char_end), ...]
+                line_handled = {i: [] for i in range(len(line_specs))}
+                # 哪些实体已经写过占位符（避免在多行重复写 [PERSON_1]）
+                placeholder_written = set()
 
-                    # 跟踪该行已处理字符区间，避免重叠 redact
-                    handled = []
-                    for original in sorted_originals:
-                        masked = replacements[original]
-                        search_from = 0
-                        while True:
-                            idx = line_text.find(original, search_from)
-                            if idx == -1:
+                def longest_common_substring(a, b, min_len=2):
+                    """在 b 中找 a 的最长子串。返回 (b_start, length) 或 None"""
+                    best = None  # (b_start, length)
+                    for L in range(min(len(a), len(b)), min_len - 1, -1):
+                        for i in range(len(a) - L + 1):
+                            sub = a[i:i + L]
+                            j = b.find(sub)
+                            if j != -1:
+                                return (j, L)
+                    return None
+
+                def get_distinctive_part(entity, etype):
+                    """提取实体里的'品牌/独特识别部分'，去掉通用前后缀"""
+                    import re as _re
+                    if etype in ('company', 'law_firm', 'institution', 'bank_name'):
+                        # 移除括号内容（含中英文括号）
+                        s = _re.sub(r'[（(].*?[)）]', '', entity)
+                        # 移除常见地名前缀
+                        for p in ('北京', '上海', '广东省', '广州市', '深圳市', '深圳', '广州',
+                                  '中国', '中华人民共和国', '中华', '广东', '浙江省', '浙江',
+                                  '江苏省', '山东省', '河北省', '河南省'):
+                            if s.startswith(p):
+                                s = s[len(p):]
+                        # 移除常见后缀（长后缀优先）
+                        for sfx in sorted([
+                            '律师事务所', '会计师事务所', '事务所',
+                            '股份有限公司', '有限责任公司', '有限公司',
+                            '集团有限公司', '集团公司',
+                            '公司', '集团', '股份',
+                        ], key=len, reverse=True):
+                            if s.endswith(sfx):
+                                s = s[:-len(sfx)]
                                 break
-                            end = idx + len(original)
-                            # 重叠检查
-                            if any(s < end and idx < e for s, e in handled):
-                                search_from = idx + 1
-                                continue
-                            handled.append((idx, end))
+                        return s.strip() if len(s.strip()) >= 2 else None
+                    if etype == 'court':
+                        for sfx in ('中级人民法院', '高级人民法院', '人民法院', '人民检察院',
+                                    '法院', '检察院', '仲裁院', '仲裁委员会'):
+                            if entity.endswith(sfx):
+                                core = entity[:-len(sfx)]
+                                return core if len(core) >= 2 else None
+                        return entity
+                    if etype == 'government':
+                        for sfx in ('司法厅', '司法部', '人民政府', '管理委员会', '办公厅',
+                                    '公安局', '派出所', '工商局'):
+                            if entity.endswith(sfx):
+                                core = entity[:-len(sfx)]
+                                return core if len(core) >= 2 else None
+                        return entity
+                    # 人名/案号/信用代码 等：本身就是独特的
+                    return entity
 
-                            # 估算敏感子串在 box 中的像素 sub-rect（按字符均分）
-                            n = max(len(line_text), 1)
-                            r0 = idx / n
-                            r1 = end / n
-                            sub_x0_px = line_x0_px + r0 * line_w_px
-                            sub_x1_px = line_x0_px + r1 * line_w_px
+                for original in sorted_originals:
+                    masked = replacements[original]
+                    etype = entity_types.get(original, 'unknown')
+                    orig_norm = normalize(original)
+                    if len(orig_norm) < 2:
+                        continue
 
-                            # 转 PDF 坐标
-                            p0 = _fitz.Point(sub_x0_px, line_y0_px) * inv
-                            p1 = _fitz.Point(sub_x1_px, line_y1_px) * inv
-                            rect = _fitz.Rect(
-                                min(p0.x, p1.x), min(p0.y, p1.y),
-                                max(p0.x, p1.x), max(p0.y, p1.y),
-                            )
-                            # 略微扩大保证完全覆盖原字
-                            rect.x0 -= 1.0
-                            rect.y0 -= 1.0
-                            rect.x1 += 1.0
-                            rect.y1 += 1.0
+                    # 数字/英文实体不要短匹配（容易误报），中文允许 2 字
+                    is_alnum = orig_norm.replace('.', '').replace('-', '').isalnum() and \
+                               all(ord(c) < 128 for c in orig_norm)
+                    min_match_len = 4 if is_alnum else 2
 
-                            fontsize = max(7, min(13, rect.height * 0.7))
-                            page.add_redact_annot(
-                                rect,
-                                text=masked,
-                                fontname='china-s',
-                                fontsize=fontsize,
-                                text_color=(0, 0, 0),
-                                fill=(1, 1, 1),
-                                align=_fitz.TEXT_ALIGN_LEFT,
-                            )
-                            page_redacted += 1
-                            search_from = end
+                    # 计算"独特识别部分"（如 "北京德恒（深圳）律师事务所" → "德恒"）
+                    distinctive = get_distinctive_part(original, etype)
+                    distinctive_norm = normalize(distinctive) if distinctive else None
 
-                # 关键：images=PDF_REDACT_IMAGE_PIXELS 让 PyMuPDF 把命中区域的图像
-                # 像素也涂成白色（默认只擦文字对象，对扫描版无效）
-                page.apply_redactions(images=_fitz.PDF_REDACT_IMAGE_PIXELS)
+                    # 找出含"独特部分"的行（这些行 100% 是真命中），它们的 y_center 用来圈定"同一视觉行"
+                    distinctive_y_centers = []
+                    if distinctive_norm and distinctive_norm != orig_norm:
+                        # 实体本身有独特部分（即名字含通用后缀）
+                        for spec in line_specs:
+                            lt_norm = normalize(spec[0])
+                            if distinctive_norm in lt_norm:
+                                yc = (spec[3] + spec[4]) / 2
+                                distinctive_y_centers.append((yc, spec[4] - spec[3]))
+
+                    for li, spec in enumerate(line_specs):
+                        lt, lx0, lx1, ly0, ly1, gstart = spec
+                        lt_norm = normalize(lt)
+                        line_yc = (ly0 + ly1) / 2
+                        line_h = ly1 - ly0
+
+                        match = longest_common_substring(orig_norm, lt_norm, min_len=min_match_len)
+                        if not match:
+                            continue
+                        local_s, length = match
+                        local_e = local_s + length
+
+                        # 反误报关卡：
+                        # 如果实体有独特部分（如公司有品牌名），且当前行不含独特部分，
+                        # 则该行必须与某个含独特部分的行在同一视觉行（y 相近）才允许 redact
+                        if distinctive_y_centers:
+                            line_has_distinctive = distinctive_norm in lt_norm
+                            if not line_has_distinctive:
+                                tol = max(line_h * 0.6, 5)
+                                same_row = any(
+                                    abs(line_yc - dyc) <= tol
+                                    for dyc, _ in distinctive_y_centers
+                                )
+                                if not same_row:
+                                    continue  # 跳过：通用部分在不相干的行里出现，是误报
+
+                        # 重叠检查
+                        if any(s < local_e and local_s < e for s, e in line_handled[li]):
+                            continue
+                        line_handled[li].append((local_s, local_e))
+
+                        n = max(len(lt), 1)
+                        line_w = max(lx1 - lx0, 1)
+                        sub_x0 = lx0 + (local_s / n) * line_w
+                        sub_x1 = lx0 + (local_e / n) * line_w
+
+                        pad_x, pad_y = 2, 2
+                        rect_x0 = sub_x0 - pad_x
+                        rect_x1 = sub_x1 + pad_x
+                        rect_y0 = ly0 - pad_y
+                        rect_y1 = ly1 + pad_y
+
+                        draw.rectangle(
+                            [(rect_x0, rect_y0), (rect_x1, rect_y1)],
+                            fill="white", outline=None,
+                        )
+
+                        # 占位符只在首次匹配该实体的行写
+                        if original not in placeholder_written:
+                            placeholder_written.add(original)
+                            line_h = ly1 - ly0
+                            font_size = max(10, int(line_h * 0.7))
+                            try:
+                                font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
+                            except Exception:
+                                font = ImageFont.load_default()
+                            try:
+                                bbox = draw.textbbox((0, 0), masked, font=font)
+                                text_w = bbox[2] - bbox[0]
+                                text_h = bbox[3] - bbox[1]
+                            except Exception:
+                                text_w, text_h = font_size * len(masked) // 2, font_size
+                            tx = rect_x0 + max((rect_x1 - rect_x0 - text_w) / 2, 0)
+                            ty = rect_y0 + max((rect_y1 - rect_y0 - text_h) / 2, 0)
+                            draw.text((tx, ty), masked, fill="black", font=font)
+
+                        page_redacted += 1
+
+                # 把绘制完成的图像作为新页面背景
+                new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
+                img_bytes = _io_bytes_png(img)
+                new_page.insert_image(new_page.rect, stream=img_bytes)
 
                 total_redacted += page_redacted
                 elapsed = _time.time() - t0
@@ -1018,7 +1200,8 @@ class FileProcessor:
 
             print(f"[视觉脱敏] 完成，共脱敏 {total_redacted} 处", flush=True)
 
-            doc.save(output_path, deflate=True, garbage=3)
+            out_doc.save(output_path, deflate=True, garbage=3)
+            out_doc.close()
             doc.close()
             return True
         except Exception:
