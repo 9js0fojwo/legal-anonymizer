@@ -1125,7 +1125,7 @@ class FileProcessor:
                                all(ord(c) < 128 for c in orig_norm)
                     min_match_len = 4 if is_alnum else 2
 
-                    # 计算"独特识别部分"（如 "北京德恒（深圳）律师事务所" → "德恒"）
+                    # 计算"独特识别部分"（如 "北京XX（深圳）律师事务所" → "XX"）
                     distinctive = get_distinctive_part(original, etype)
                     distinctive_norm = normalize(distinctive) if distinctive else None
 

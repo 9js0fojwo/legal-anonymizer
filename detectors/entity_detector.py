@@ -217,6 +217,24 @@ class EntityDetector:
 
                 search_start = pos + len(name)
 
+        # 对人名做"带空格变体"的二次定位：处理 PDF 排版后字符间被插入空格的情况
+        # （如 "X  X  X" 三字姓名被排版拆开），这些位置在直接 text.find 时找不到
+        person_names = [
+            (name, etype) for name, etype in all_entities_to_find
+            if etype == 'person' and 2 <= len(name) <= 4
+        ]
+        existing_spans = [(p, p + length) for _, _, p, length in results]
+        for name, etype in person_names:
+            spaced_re = re.compile(r'\s*'.join(re.escape(c) for c in name))
+            for m in spaced_re.finditer(text):
+                pos, end = m.start(), m.end()
+                # 跳过已被覆盖的位置
+                if any(pos < oe and end > os_ for os_, oe in existing_spans):
+                    continue
+                # 验证后续/前置字符避免误匹配（人名变体不应嵌入更长 CJK 实体内）
+                results.append((m.group(0), etype, pos, end - pos))
+                existing_spans.append((pos, end))
+
         # 转换为统一格式并按位置排序
         final_results = [(name, etype, pos) for name, etype, pos, _ in results]
         final_results.sort(key=lambda x: x[2])
@@ -340,6 +358,22 @@ class EntityDetector:
                             # 排除含机构词的前缀（如"法院XX银行"、"检察院XX银行"）
                             inst_words = ('法院', '检察院', '派出所', '公安局', '政府', '委员会', '办公厅')
                             if any(iw in bank_prefix for iw in inst_words):
+                                continue
+                            # 排除泛指性前缀（"全国银行"、"同期银行"、"同业银行"、"商业银行"等不是具体银行）
+                            generic_bank_prefixes = {
+                                '全国', '全部', '全体', '同期', '同业', '商业', '部分',
+                                '本国', '外国', '国内', '国外', '中外',
+                                '同期全国', '中国境内', '我国', '本案',
+                                '该', '本', '此',
+                            }
+                            if bank_prefix in generic_bank_prefixes:
+                                continue
+                            # 拒绝以泛指词结尾后跟银行（"同期全国银行" -> 全国是泛指）
+                            for gp in ('全国', '同期', '同业', '商业'):
+                                if bank_prefix.endswith(gp) and len(bank_prefix) <= len(gp) + 2:
+                                    bank_prefix = ''
+                                    break
+                            if not bank_prefix:
                                 continue
                         # 过滤企业内部委员会（非政府机构）
                         if entity_type == 'government' and '委员会' in name:
@@ -507,6 +541,25 @@ class EntityDetector:
                 if self._is_valid_name(candidate):
                     detected.add((candidate, 'person'))
 
+            # 模式：法庭尾部司法人员（关键词与姓名都可能因 PDF 排版而带空格）
+            # 例："审  判  长   X  X  X"  "书  记  员   X  X  X"
+            # 名字部分锚定到行尾，避免吞入下一行的角色关键词起始字
+            judicial_pattern = re.compile(
+                r'(?:审\s*判\s*长|审\s*判\s*员|代\s*理\s*审\s*判\s*员|'
+                r'书\s*记\s*员|陪\s*审\s*员|人\s*民\s*陪\s*审\s*员|'
+                r'主\s*审\s*法\s*官|承\s*办\s*法\s*官|'
+                r'仲\s*裁\s*员|首\s*席\s*仲\s*裁\s*员)'
+                r'[：:\s]+'
+                r'([一-龥](?:[ \t　]*[一-龥]){1,3})'
+                r'[ \t　]*(?=[\n，。；,;.]|$)',
+                re.MULTILINE
+            )
+            for match in judicial_pattern.finditer(text):
+                raw = match.group(1)
+                candidate = re.sub(r'\s+', '', raw)
+                if 2 <= len(candidate) <= 4 and self._is_valid_name(candidate):
+                    detected.add((candidate, 'person'))
+
             # 模式：姓名 + 性别/年龄（法律文书常见格式）
             # "姜妍，女，" "张三，男，1990年" "李四（男，"
             gender_patterns = [
@@ -577,7 +630,7 @@ class EntityDetector:
                         detected.add((abbrev, 'company'))
                     elif 2 <= len(abbrev) <= 8 and re.fullmatch(r'[一-龥]+', abbrev):
                         # 兜底：abbrev 是 2-8 个纯中文字符（排除 GENERIC 之后的专名），
-                        # 即使全称不是标准 ORG_SUFFIX 结尾（如'智军殿'庙名、'故居研究会'机构）
+                        # 即使全称不是标准 ORG_SUFFIX 结尾（如纪念馆、故居研究会等机构）
                         # 也加入为 institution 类型
                         # 同时尝试从 full_name 尾部提取干净的实体名
                         cjk_tail = re.search(r'[一-龥]{2,16}$', full_name)

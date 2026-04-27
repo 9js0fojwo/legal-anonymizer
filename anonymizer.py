@@ -160,7 +160,7 @@ class LegalAnonymizer:
         merged = self._expand_same_name_occurrences(text, merged)
 
         # --- 第 6 步：品牌核心词扩展 ---
-        # 对识别到的公司/律所/机构名，提取去除前后缀后的核心品牌词（如"仁瑞""华商""启邦"）
+        # 对识别到的公司/律所/机构名，提取去除前后缀后的核心品牌词
         # 在全文中查找其单独出现位置，加入实体列表
         merged = self._add_distinctive_part_entities(text, merged)
 
@@ -248,10 +248,10 @@ class LegalAnonymizer:
     @staticmethod
     def _add_distinctive_part_entities(text: str, entities: List) -> List:
         """
-        从已识别的公司/律所/机构/法院/政府/银行实体中，提取去除前后缀的"核心品牌词"
-        （如 仁瑞、启邦、华商、环庆），在全文中查找单独出现的位置并补充为实体。
+        从已识别的公司/律所/机构/法院/政府/银行实体中，提取去除前后缀的"核心品牌词"，
+        在全文中查找单独出现的位置并补充为实体。
 
-        典型场景：检测到"仁瑞（深圳）融资租赁有限公司"后，文中独立出现的"仁瑞"也应被脱敏。
+        典型场景：检测到"XX（深圳）融资租赁有限公司"后，文中独立出现的"XX"也应被脱敏。
         """
         # 仅对公司/律所/机构/银行做品牌扩展。法院/政府名以行政区为主，不适合品牌化。
         EXPAND_FROM = {"company", "law_firm", "institution", "bank_name"}
