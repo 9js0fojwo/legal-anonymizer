@@ -326,9 +326,14 @@ class PatternDetector:
                     if start_pos > 0 and text[start_pos - 1].isdigit():
                         continue
                     # 检查匹配后方是否紧邻数字或连字符
+                    # 注意：当匹配以"元/圆/万元/亿元"等显式后缀结尾时，已有清晰的金额边界，
+                    # 后面紧跟数字属于下一个金额（OCR 表格里相邻金额会粘连），不应跳过。
                     if end_pos < len(text):
                         next_char = text[end_pos]
-                        if next_char.isdigit() or next_char == '-':
+                        ends_with_yuan_suffix = match_text.endswith(
+                            ('元', '圆', '万元', '亿元', '元整', '圆整')
+                        )
+                        if (next_char.isdigit() or next_char == '-') and not ends_with_yuan_suffix:
                             continue
                     # 排除"第X条/款/项/章/节"等法规条文引用（例如"第2条"被误判为"2元"）
                     ctx_before = text[max(0, start_pos - 10):start_pos]
