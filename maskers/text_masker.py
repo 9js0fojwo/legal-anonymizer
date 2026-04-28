@@ -10,12 +10,38 @@ from collections import defaultdict
 class TextMasker:
     """文本掩码器"""
 
+    # 占位符风格切换：english_bracket（默认 [PERSON_1]）/ chinese_angle（<人物1>）/ chinese_bracket（〔姓名1〕）
+    # 切换时 placeholder_templates 整体替换；不影响 partial 掩码
+    _CHINESE_LABELS = {
+        'person': '人物', 'company': '公司', 'address': '地址', 'full_address': '地址',
+        'law_firm': '律所', 'institution': '机构', 'government': '政府', 'court': '法院',
+        'city': '城市', 'district': '区县', 'location': '地点', 'signature': '签名',
+        'bank_name': '银行', 'branch_name': '支行', 'account_name': '账户名',
+        'project_name': '项目', 'product_name': '产品', 'asset': '资产',
+        'vehicle': '车辆', 'property': '房产', 'stock': '股票', 'seal': '印章',
+        'id_card': '身份证', 'phone': '电话', 'fax': '传真', 'toll_free': '电话',
+        'email': '邮箱', 'bank_account': '银行卡', 'passport': '护照',
+        'hk_macau_pass': '港澳通行证', 'taiwan_pass': '台胞证', 'military_id': '军官证',
+        'credit_code': '社会信用代码', 'case_number': '案号',
+        'contract_number': '合同号', 'invoice_number': '发票号',
+        'license_plate': '车牌', 'vin': '车架号', 'ip_address': 'IP地址',
+        'mac_address': 'MAC地址', 'amount': '金额', 'price': '价格',
+        'date': '日期', 'time': '时间', 'datetime': '时间', 'postal_code': '邮编',
+        'house_number': '房号', 'website': '网址', 'org_code': '机构代码',
+        'tax_number': '税号', 'social_account': '社交账号', 'other': '其他',
+        'property_cert': '产权证', 'permit_number': '证书号', 'patent_number': '专利号',
+        'document_number': '文书号', 'secret': '密钥', 'unknown': '未知',
+    }
+
     def __init__(self):
         self.mapping = {}  # 原始值 -> 占位符
         self.reverse_mapping = {}  # 占位符 -> 原始值
         self.counter = defaultdict(int)
         self.replacement_log = []
         self.abbreviation_map = {}  # 简称 -> 全称
+        self.placeholder_style = 'english_bracket'  # 默认风格
+        # 默认英文模板的副本，切回 english_bracket 时复原用
+        self._default_templates = None  # 在 placeholder_templates 定义后填充
 
         # 掩码策略定义
         # 可以是 "placeholder"（占位符）或 "partial"（部分掩码）
@@ -146,6 +172,8 @@ class TextMasker:
             'secret': '[SECRET_{}]',
             'unknown': '[UNKNOWN_{}]',
         }
+        # 保留默认英文模板的副本，切风格时用作复原参考
+        self._default_templates = dict(self.placeholder_templates)
 
     def set_strategy(self, entity_type: str, strategy: str):
         """
@@ -157,6 +185,33 @@ class TextMasker:
         """
         if strategy in ['placeholder', 'partial']:
             self.mask_strategies[entity_type] = strategy
+
+    def set_placeholder_style(self, style: str):
+        """
+        设置占位符风格：
+          - english_bracket: [PERSON_1] [COMPANY_1]（默认）
+          - chinese_angle:   <人物1> <公司1>
+          - chinese_bracket: 〔姓名1〕〔公司1〕
+        切换后所有 placeholder 类型的模板会被一次性替换。
+        partial 掩码（如 138****5678）不受影响。
+        """
+        if style not in ('english_bracket', 'chinese_angle', 'chinese_bracket'):
+            return
+        self.placeholder_style = style
+        if style == 'english_bracket':
+            # 复原默认英文模板
+            for etype, tpl in self._default_templates.items():
+                self.placeholder_templates[etype] = tpl
+            return
+        # 中文风格：基于 _CHINESE_LABELS 重建模板
+        wrappers = {
+            'chinese_angle': ('<', '>'),
+            'chinese_bracket': ('〔', '〕'),
+        }
+        left, right = wrappers[style]
+        for etype in self.placeholder_templates:
+            label = self._CHINESE_LABELS.get(etype, '其他')
+            self.placeholder_templates[etype] = f'{left}{label}{{}}{right}'
 
     def set_all_strategy(self, strategy: str):
         """

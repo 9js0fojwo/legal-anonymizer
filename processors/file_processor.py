@@ -104,7 +104,8 @@ class FileProcessor:
             'output': ['.txt', '.md', '.pdf', '.docx']
         }
 
-    def extract_text(self, file_path: str, use_ocr: bool = False, ocr_engine: str = 'rapidocr') -> str:
+    def extract_text(self, file_path: str, use_ocr: bool = False, ocr_engine: str = 'rapidocr',
+                     progress_callback=None) -> str:
         """
         从文件中提取文本
 
@@ -112,6 +113,8 @@ class FileProcessor:
             file_path: 文件路径
             use_ocr: 是否使用OCR（仅适用于PDF/图片）
             ocr_engine: 'rapidocr'（默认，快）| 'paddleocr'（慢但精准）| 'tesseract'（兜底）
+            progress_callback: 可选的进度回调，签名 fn(stage:str, current:int, total:int)
+                              stage 可为 'ocr_page_done' / 'extract_done'
 
         Returns:
             提取的文本内容
@@ -123,7 +126,7 @@ class FileProcessor:
         suffix = path.suffix.lower()
 
         if suffix == '.pdf':
-            text = self._extract_pdf_text(file_path, use_ocr, ocr_engine)
+            text = self._extract_pdf_text(file_path, use_ocr, ocr_engine, progress_callback=progress_callback)
         elif suffix == '.docx':
             text = self._extract_docx_text(file_path)
         elif suffix == '.doc':
@@ -165,7 +168,8 @@ class FileProcessor:
         text = re.sub(r'([A-Za-z])\n([一-龥])', r'\1\2', text)
         return text
 
-    def _extract_pdf_text(self, pdf_path: str, use_ocr: bool = False, ocr_engine: str = 'rapidocr') -> str:
+    def _extract_pdf_text(self, pdf_path: str, use_ocr: bool = False, ocr_engine: str = 'rapidocr',
+                          progress_callback=None) -> str:
         """从PDF提取文本。ocr_engine: rapidocr(默认) | paddleocr | tesseract"""
         if not HAS_PYMUPDF:
             raise ImportError("需要安装 PyMuPDF: pip install pymupdf")
@@ -203,6 +207,10 @@ class FileProcessor:
         # 太多 worker 反而内存压力大且效益递减
         max_workers = min(2, ocr_pages or 1)
 
+        # 用计数器，多线程下也安全（GIL 保护 int += 1）
+        ocr_done_counter = [0]
+        ocr_total = ocr_pages
+
         def process_page(job):
             page_num, native_text, ocr_img = job
             t0 = _time.time()
@@ -211,6 +219,12 @@ class FileProcessor:
                 text = self._fix_ocr_text(text)
                 elapsed = _time.time() - t0
                 print(f"[OCR] 第 {page_num}/{page_count} 页完成，耗时 {elapsed:.1f}s", flush=True)
+                ocr_done_counter[0] += 1
+                if progress_callback:
+                    try:
+                        progress_callback('ocr_page_done', ocr_done_counter[0], ocr_total)
+                    except Exception:
+                        pass
             else:
                 text = self._fix_line_breaks(native_text)
             return page_num, text
@@ -675,7 +689,8 @@ class FileProcessor:
         return self._ocr_image(img, ocr_engine)
 
     def anonymize_pdf_inplace(
-        self, input_path: str, output_path: str, mapping: dict
+        self, input_path: str, output_path: str, mapping: dict,
+        whitebox_only: bool = False,
     ) -> bool:
         """
         PDF → PDF 原地脱敏（保留原 PDF 的全部格式：字体、排版、盖章、签名）
@@ -744,7 +759,7 @@ class FileProcessor:
                             fontsize = max(7, min(13, rect.height * 0.72))
                             page.add_redact_annot(
                                 padded,
-                                text=masked if ri == 0 else "",
+                                text="" if whitebox_only else (masked if ri == 0 else ""),
                                 fontname=fontname,
                                 fontsize=fontsize,
                                 text_color=(0, 0, 0),
@@ -778,7 +793,7 @@ class FileProcessor:
                                 fontsize = max(7, min(13, r.height * 0.72))
                                 page.add_redact_annot(
                                     padded,
-                                    text=masked,
+                                    text="" if whitebox_only else masked,
                                     fontname=fontname,
                                     fontsize=fontsize,
                                     text_color=(0, 0, 0),
@@ -884,7 +899,8 @@ class FileProcessor:
         return occurrences
 
     def anonymize_scanned_pdf_inplace(
-        self, input_path: str, output_path: str, mapping: dict, ocr_engine: str = 'rapidocr'
+        self, input_path: str, output_path: str, mapping: dict,
+        ocr_engine: str = 'rapidocr', whitebox_only: bool = False,
     ) -> bool:
         """
         扫描版 PDF 视觉脱敏（保留原页面图像，只把敏感字位置盖白底+占位符）
@@ -1188,15 +1204,18 @@ class FileProcessor:
                         )
 
                         # 决定该段写什么文字：
+                        #   - whitebox_only：强制不写任何文字，纯白框
                         #   - partial 掩码（mask 长度 == 实体长度）：写本行对应的切片（如"张*"）
                         #     这种掩码本身就有信息（"张*"显示有姓但不显示名），保留
                         #   - 占位符模式（如 [PERSON_1]）：不写文字，纯白框
-                        #     用户要求："只要白框覆盖，不要 [PERSON_1] 等占位符文字"
-                        same_length = len(masked) == len(orig_norm)
-                        if same_length:
-                            text_to_draw = masked[ent_start:ent_end]
+                        if whitebox_only:
+                            text_to_draw = ''
                         else:
-                            text_to_draw = ''  # 占位符模式：只白框，不写文字
+                            same_length = len(masked) == len(orig_norm)
+                            if same_length:
+                                text_to_draw = masked[ent_start:ent_end]
+                            else:
+                                text_to_draw = ''  # 占位符模式：只白框，不写文字
 
                         if text_to_draw:
                             line_h = ly1 - ly0

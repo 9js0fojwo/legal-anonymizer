@@ -13,10 +13,12 @@ import os
 os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
 
 import sys
+import re
 import json
 import uuid
 import time
 import shutil
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -261,9 +263,88 @@ def select_inbox_file():
     })
 
 
+def _run_single_analyze(session_id: str, use_ocr: bool, ocr_engine: str,
+                         use_cn_llm: bool, use_llm: bool):
+    """后台线程跑单文件 OCR + 检测，期间更新 session['analyze_progress']"""
+    session = sessions.get(session_id)
+    if not session:
+        return
+    progress = session['analyze_progress']
+    progress['stage'] = 'ocr'
+    progress['started_at'] = time.time()
+
+    # 计算 ETA：扫描版按页数预估，文字版很快
+    fp = session['file_path']
+    progress['eta_s'] = _estimate_eta(fp, use_ocr) if Path(fp).suffix.lower() == '.pdf' else 5.0
+
+    def on_progress(stage, current, total):
+        progress['stage'] = stage
+        progress['current'] = current
+        progress['total'] = max(total, 1)
+        progress['percent'] = round(current / max(total, 1) * 90, 1)  # OCR 占总流程 90%
+
+    try:
+        anonymizer = LegalAnonymizer(use_cn_llm=use_cn_llm, use_llm=use_llm)
+        ud = load_user_dict()
+        if ud:
+            anonymizer.add_custom_entities(ud)
+
+        text = anonymizer.processor.extract_text(
+            fp, use_ocr=use_ocr, ocr_engine=ocr_engine, progress_callback=on_progress,
+        )
+        session['text'] = text
+        if not text.strip():
+            progress['stage'] = 'error'
+            progress['error'] = '文件内容为空，如果是扫描版 PDF 请启用 OCR'
+            progress['percent'] = 100
+            return
+
+        progress['stage'] = 'detect'
+        progress['percent'] = 92
+        all_entities = anonymizer._detect_all(text)
+        session['auto_entities'] = all_entities
+
+        # 整理 findings
+        CONTEXT_WINDOW = 40
+        findings, seen = {}, {}
+        for entity_text, entity_type, pos in all_entities:
+            key = (entity_text, entity_type)
+            if key not in seen:
+                start = max(0, pos - CONTEXT_WINDOW)
+                end = min(len(text), pos + len(entity_text) + CONTEXT_WINDOW)
+                seen[key] = text[start:end].replace('\n', ' ').strip()
+            findings.setdefault(entity_type, [])
+            if not any(it['text'] == entity_text for it in findings[entity_type]):
+                findings[entity_type].append({'text': entity_text, 'context': seen[key]})
+        session['findings'] = findings
+
+        type_names = anonymizer.pattern_detector.type_names.copy()
+        type_names.update({
+            'person': '人名', 'company': '公司名', 'law_firm': '律师事务所',
+            'court': '法院', 'government': '政府机关', 'institution': '机构',
+            'bank_name': '银行', 'address': '地址',
+        })
+        progress['result'] = {
+            'findings': findings,
+            'total_findings': len(all_entities),
+            'type_count': len(findings),
+            'type_names': type_names,
+            'text_preview': text[:500] + ('...' if len(text) > 500 else ''),
+        }
+        progress['stage'] = 'done'
+        progress['percent'] = 100
+        progress['finished_at'] = time.time()
+        progress['elapsed_s'] = round(progress['finished_at'] - progress['started_at'], 1)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        progress['stage'] = 'error'
+        progress['error'] = str(e)
+        progress['percent'] = 100
+
+
 @app.route('/api/analyze', methods=['POST'])
 def analyze_document():
-    """分析文档，检测敏感信息"""
+    """启动单文件分析（异步）。调用后立即返回，前端轮询 /api/analyze/status"""
     data = request.get_json()
     session_id = data.get('session_id')
     use_ocr = data.get('use_ocr', False)
@@ -279,63 +360,45 @@ def analyze_document():
     session['ocr_engine'] = ocr_engine
     session['use_cn_llm'] = use_cn_llm
     session['use_llm'] = use_llm
+    session['analyze_progress'] = {
+        'stage': 'queued', 'percent': 0, 'current': 0, 'total': 0,
+        'eta_s': 0, 'started_at': 0, 'finished_at': 0, 'elapsed_s': 0,
+        'error': None, 'result': None,
+    }
 
-    try:
-        anonymizer = LegalAnonymizer(use_cn_llm=use_cn_llm, use_llm=use_llm)
+    threading.Thread(
+        target=_run_single_analyze,
+        args=(session_id, use_ocr, ocr_engine, use_cn_llm, use_llm),
+        daemon=True,
+    ).start()
+    return jsonify({'status': 'started', 'session_id': session_id})
 
-        # 注入用户词典（持久化自定义实体）
-        user_dict = load_user_dict()
-        if user_dict:
-            anonymizer.add_custom_entities(user_dict)
 
-        # 提取文本
-        text = anonymizer.processor.extract_text(session['file_path'], use_ocr=use_ocr, ocr_engine=ocr_engine)
-        session['text'] = text
+@app.route('/api/analyze/status/<session_id>', methods=['GET'])
+def analyze_status(session_id):
+    """查询单文件分析进度"""
+    session = sessions.get(session_id)
+    if not session or 'analyze_progress' not in session:
+        return jsonify({'error': '会话不存在或未开始分析'}), 404
+    p = session['analyze_progress']
+    now = time.time()
+    payload = {
+        'stage': p['stage'],
+        'percent': p['percent'],
+        'current': p.get('current', 0),
+        'total': p.get('total', 0),
+        'eta_s': p.get('eta_s', 0),
+        'started_at': p.get('started_at', 0),
+        'elapsed_s': p.get('elapsed_s', 0) if p['stage'] in ('done', 'error')
+                     else (round(now - p['started_at'], 1) if p.get('started_at') else 0),
+        'error': p.get('error'),
+        'now': now,
+    }
+    if p['stage'] == 'done':
+        payload['result'] = p.get('result')
+    return jsonify(payload)
 
-        if not text.strip():
-            return jsonify({'error': '文件内容为空，如果是扫描版 PDF 请启用 OCR'}), 400
 
-        # 检测实体
-        all_entities = anonymizer._detect_all(text)
-        session['auto_entities'] = all_entities
-
-        # 按类型分组，附带上下文片段（前后40字）
-        CONTEXT_WINDOW = 40
-        findings = {}
-        seen = {}  # (entity_text, entity_type) -> context snippet
-        for entity_text, entity_type, pos in all_entities:
-            key = (entity_text, entity_type)
-            if key not in seen:
-                start = max(0, pos - CONTEXT_WINDOW)
-                end = min(len(text), pos + len(entity_text) + CONTEXT_WINDOW)
-                ctx = text[start:end].replace('\n', ' ').strip()
-                seen[key] = ctx
-            if entity_type not in findings:
-                findings[entity_type] = []
-            if not any(item['text'] == entity_text for item in findings[entity_type]):
-                findings[entity_type].append({'text': entity_text, 'context': seen[key]})
-
-        session['findings'] = findings
-
-        # 获取类型中文名
-        type_names = anonymizer.pattern_detector.type_names.copy()
-        auto_names = {
-            'person': '人名', 'company': '公司名', 'law_firm': '律师事务所',
-            'court': '法院', 'government': '政府机关', 'institution': '机构',
-            'bank_name': '银行', 'address': '地址',
-        }
-        type_names.update(auto_names)
-
-        return jsonify({
-            'findings': findings,
-            'total_findings': len(all_entities),
-            'type_count': len(findings),
-            'type_names': type_names,
-            'text_preview': text[:500] + ('...' if len(text) > 500 else ''),
-        })
-
-    except Exception as e:
-        return jsonify({'error': f'分析失败: {str(e)}'}), 500
 
 
 @app.route('/api/entities', methods=['POST'])
@@ -390,9 +453,15 @@ def anonymize_document():
             use_llm=session.get('use_llm', False),
         )
 
-        # 设置掩码策略
-        if mask_strategy:
-            anonymizer.set_all_mask_strategy(mask_strategy)
+        # 设置掩码策略；whitebox 是占位符策略 + PDF 渲染时不画文字
+        pdf_whitebox = (mask_strategy == 'whitebox')
+        effective_strategy = 'placeholder' if pdf_whitebox else mask_strategy
+        if effective_strategy:
+            anonymizer.set_all_mask_strategy(effective_strategy)
+
+        # 占位符风格（中文/英文）—— 仅在 placeholder/whitebox 模式下生效
+        placeholder_style = data.get('placeholder_style', 'english_bracket')
+        anonymizer.set_placeholder_style(placeholder_style)
 
         # 注入用户词典 + 会话自定义实体
         user_dict = load_user_dict()
@@ -444,6 +513,7 @@ def anonymize_document():
                 anonymized_content=anonymized_text,
                 use_ocr=session.get('use_ocr', False),
                 ocr_engine=session.get('ocr_engine', 'rapidocr'),
+                whitebox_only=pdf_whitebox,
             )
             saved_files.extend(files)
 
@@ -537,8 +607,10 @@ def re_anonymize_document():
         output_format = session.get('output_format', 'docx')
         excluded_entities = session.get('last_excluded_entities', [])
 
-        if mask_strategy:
-            anonymizer.set_all_mask_strategy(mask_strategy)
+        pdf_whitebox = (mask_strategy == 'whitebox')
+        effective_strategy = 'placeholder' if pdf_whitebox else mask_strategy
+        if effective_strategy:
+            anonymizer.set_all_mask_strategy(effective_strategy)
 
         # 用原始文本重新检测全部实体
         all_entities = anonymizer._detect_all(session['text'])
@@ -581,6 +653,7 @@ def re_anonymize_document():
                 anonymized_content=anonymized_text,
                 use_ocr=session.get('use_ocr', False),
                 ocr_engine=session.get('ocr_engine', 'rapidocr'),
+                whitebox_only=pdf_whitebox,
             )
             saved_files.extend(files)
 
@@ -745,8 +818,6 @@ def clear_user_dict():
 
 # ==================== 批量处理 ====================
 
-import threading
-
 # 批次状态：batch_id -> {created_at, items: [...], done, total}
 batches: Dict[str, dict] = {}
 BATCH_TIMEOUT = 7200  # 2 小时
@@ -760,17 +831,44 @@ def _cleanup_batches():
         del batches[bid]
 
 
+def _estimate_eta(file_path: str, is_scanned: bool) -> float:
+    """根据文件类型/大小预估处理秒数（保守估计）"""
+    suffix = Path(file_path).suffix.lower()
+    size_kb = os.path.getsize(file_path) / 1024
+    if suffix == '.pdf':
+        # 用页数判断更准；扫描版 OCR 慢约 12-15s/页，文字版 PDF 约 0.5-1s/页
+        try:
+            import fitz
+            pages = len(fitz.open(file_path))
+        except Exception:
+            pages = max(1, int(size_kb / 80))
+        if is_scanned:
+            return max(8.0, pages * 13.0 + 3.0)
+        return max(2.0, pages * 0.8 + 1.5)
+    if suffix in ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif', '.webp'):
+        return 8.0
+    if suffix in ('.docx', '.doc'):
+        return max(2.0, size_kb / 100)
+    return max(1.0, size_kb / 200)
+
+
 def _process_batch_item(batch_id: str, item: dict, options: dict):
     """单个文件脱敏（在后台线程里跑）"""
     try:
         item['status'] = 'processing'
         item['stage'] = 'detect'
+        item['started_at'] = time.time()
 
         anonymizer = LegalAnonymizer(
             use_cn_llm=options.get('use_cn_llm', False),
             use_llm=options.get('use_llm', False),
         )
-        anonymizer.set_all_mask_strategy(options.get('mask_strategy', 'placeholder'))
+        # whitebox 模式仍然用 placeholder 策略生成文本占位符（[PERSON_1]等），
+        # 但会传 pdf_whitebox=True 让 PDF 输出层不画文字、只留白框
+        strategy = options.get('mask_strategy', 'placeholder')
+        pdf_whitebox = (strategy == 'whitebox')
+        anonymizer.set_all_mask_strategy('placeholder' if pdf_whitebox else strategy)
+        anonymizer.set_placeholder_style(options.get('placeholder_style', 'english_bracket'))
 
         # 注入用户词典
         ud = load_user_dict()
@@ -778,11 +876,16 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
             anonymizer.add_custom_entities(ud)
 
         input_path = Path(item['file_path'])
-        output_stem = OUTPUT_DIR / f"batch_{batch_id}_{item['idx']:02d}_{input_path.stem}"
+        # input_path.stem 已经带了 batch_<id>_NN_ 前缀（来自 upload 时的 safe_name），
+        # 这里取原始文件名的 stem 避免重复前缀
+        orig_stem = Path(item['name']).stem
+        output_stem = OUTPUT_DIR / f"batch_{batch_id}_{item['idx']:02d}_{orig_stem}"
 
         item['stage'] = 'anonymize'
         formats = options.get('output_formats') or ['pdf' if input_path.suffix.lower() == '.pdf' else 'docx']
         is_scanned = is_scanned_pdf(str(input_path)) if input_path.suffix.lower() == '.pdf' else False
+        item['is_scanned'] = is_scanned
+        item['eta_s'] = round(_estimate_eta(str(input_path), is_scanned), 1)
 
         result = anonymizer.anonymize_file(
             input_path=str(input_path),
@@ -792,6 +895,7 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
             ocr_engine=options.get('ocr_engine', 'rapidocr'),
             save_text_backup=True,
             save_mapping=True,
+            pdf_whitebox=pdf_whitebox,
         )
         if 'error' in result:
             item['status'] = 'error'
@@ -816,9 +920,42 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
         item['status'] = 'error'
         item['error'] = str(e)
     finally:
+        # 记录完成时间和实际耗时
+        if 'started_at' in item:
+            item['finished_at'] = time.time()
+            item['elapsed_s'] = round(item['finished_at'] - item['started_at'], 1)
         batch = batches.get(batch_id)
         if batch:
             batch['done'] = sum(1 for it in batch['items'] if it['status'] in ('done', 'error'))
+
+
+@app.route('/api/restore', methods=['POST'])
+def restore_text():
+    """根据脱敏映射 JSON 把脱敏文本还原成原文"""
+    data = request.get_json() or {}
+    anonymized_text = data.get('text', '')
+    mapping_data = data.get('mapping')
+
+    if not anonymized_text:
+        return jsonify({'error': '请粘贴脱敏后的文本'}), 400
+    if not mapping_data:
+        return jsonify({'error': '请提供映射字典（mapping.json 的内容或上传文件）'}), 400
+
+    # mapping 可能是直接的 {占位符: {original, type}}，
+    # 也可能是工具导出的完整 JSON：{metadata, mapping, replacement_log}
+    if isinstance(mapping_data, dict) and 'mapping' in mapping_data and isinstance(mapping_data['mapping'], dict):
+        mapping_dict = mapping_data['mapping']
+    else:
+        mapping_dict = mapping_data
+
+    try:
+        restored = LegalAnonymizer.restore_text(anonymized_text, mapping_dict)
+        return jsonify({
+            'restored': restored,
+            'replacements': len(mapping_dict) if isinstance(mapping_dict, dict) else 0,
+        })
+    except Exception as e:
+        return jsonify({'error': f'还原失败: {str(e)}'}), 500
 
 
 @app.route('/api/batch/upload', methods=['POST'])
@@ -885,6 +1022,7 @@ def batch_start():
     batch_id = data.get('batch_id')
     options = {
         'mask_strategy': data.get('mask_strategy', 'placeholder'),
+        'placeholder_style': data.get('placeholder_style', 'english_bracket'),
         'output_formats': data.get('output_formats') or None,
         'use_cn_llm': bool(data.get('use_cn_llm', False)),
         'use_llm': bool(data.get('use_llm', False)),
@@ -927,9 +1065,14 @@ def batch_status(batch_id):
                 'total_matched': it.get('total_matched', 0),
                 'replacements_made': it.get('replacements_made', 0),
                 'outputs': it.get('outputs', {}),
+                'eta_s': it.get('eta_s', 0),
+                'started_at': it.get('started_at', 0),
+                'finished_at': it.get('finished_at', 0),
+                'elapsed_s': it.get('elapsed_s', 0),
             }
             for it in batch['items']
         ],
+        'now': time.time(),
     })
 
 
@@ -937,6 +1080,7 @@ def batch_status(batch_id):
 def batch_download(batch_id):
     """打包下载整个批次的所有输出文件为 zip"""
     import zipfile, io
+    from urllib.parse import quote
     batch = batches.get(batch_id)
     if not batch:
         return jsonify({'error': '批次不存在或已过期'}), 404
@@ -946,20 +1090,33 @@ def batch_download(batch_id):
         for it in batch['items']:
             if it['status'] != 'done':
                 continue
+            # 在 zip 内的目录结构：原文件名（去后缀）/ {输出文件名}
             stem = Path(it['name']).stem
+            # 输出文件实际名带 batch_ 前缀，重命名为简洁的：原名{.pdf|_mapping.json|.txt}
             for kind, path in (it.get('outputs') or {}).items():
                 if not path or not Path(path).exists():
                     continue
-                # 在 zip 内的目录结构：原文件名/{kind}.{ext}
-                arc_name = f"{stem}/{Path(path).name}"
-                zf.write(path, arc_name)
+                p = Path(path)
+                # 把 batch_<id>_NN_ 前缀剥掉，让 zip 里文件名干净
+                clean_name = re.sub(r'^batch_[a-f0-9]+_\d+_', '', p.name)
+                arc_name = f"{stem}/{clean_name}"
+                zf.write(str(p), arc_name)
     buf.seek(0)
-    fname = f'batch_{batch_id}_脱敏结果.zip'
+
+    # Content-Disposition：filename 用 ASCII，filename* 用 UTF-8 编码（RFC 5987），
+    # 否则 Werkzeug 会因非 Latin-1 字符报 UnicodeError 让请求挂死。
+    ascii_name = f'batch_{batch_id}_results.zip'
+    utf8_name = quote(f'批量脱敏结果_{batch_id}.zip', safe='')
     from flask import Response
     return Response(
         buf.getvalue(),
         mimetype='application/zip',
-        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+        headers={
+            'Content-Disposition': (
+                f"attachment; filename=\"{ascii_name}\"; "
+                f"filename*=UTF-8''{utf8_name}"
+            ),
+        },
     )
 
 

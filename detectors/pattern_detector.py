@@ -41,7 +41,7 @@ class PatternDetector:
         'tax_number': 6,     # 15-20位纯数字，最宽泛
         'social_account': 2,  # 社交账号（QQ/微信）
         'full_address': 2,    # 完整地址优先级高，避免被子模式拆分
-        'property_cert': 3,
+        'property_cert': 2,  # 不动产权证比 case_number 更具体，优先抢占
         'permit_number': 3,
         'house_number': 7,
         'postal_code': 8,    # 6位纯数字，最容易误匹配
@@ -108,8 +108,14 @@ class PatternDetector:
             'website': r'https?://[^\s<>"{}|\\^`\[\]））、。，；]+|(?<![A-Za-z0-9.])www\.[A-Za-z0-9][-A-Za-z0-9.]*\.[A-Za-z]{2,}(?:/[^\s<>"{}|\\^`\[\]））、。，；]*)?',
 
             # ========== 社交账号类 ==========
-            # QQ号、微信号等
-            'social_account': r'(?:QQ|qq|Qq|微信号?|WeChat|wechat|微博号?)\s*(?:号码?)?[：:]\s*[A-Za-z0-9_]{5,20}',
+            # QQ 号 / 微信号 / 微博号 / VX 缩写
+            # 微信：'微信号: abc-123' 'wechat: john_doe' 'VX：xxxxxx'，需字母开头
+            # QQ：'QQ：12345' 'Q号: 12345' 不在单词中（避免 'QQA' 误匹配）
+            # 微博：'微博: xxx' 'weibo: xxx'
+            'social_account': (
+                r'(?i)(?:微信号?|wechat|VX|微博号?|weibo)[\s:：]*[a-zA-Z][a-zA-Z0-9_\-]{4,19}'
+                r'|(?<!\w)(?i:QQ号码?|QQ号|Q号|QQ)[\s:：]*[1-9]\d{4,9}(?!\d)'
+            ),
 
             # ========== 网络标识类 ==========
             # IP地址
@@ -166,8 +172,16 @@ class PatternDetector:
             'house_number': r'\d+(?:弄|单元|号楼|号院|号室|栋|座|楼|室)(?:-\d+)?',
 
             # ========== 证件/证书编号类 ==========
-            # 房地产证号（深房地字第 XXXXX 号、FH XXXXX 号 等）
-            'property_cert': r'(?:[\u4e00-\u9fa5]{1,4}房地字第|FH)\s*\d{5,15}\s*号?',
+            # 房地产证号 / 不动产权证书号
+            # 旧式：深房地字第 XXXXX 号、FH XXXXX 号
+            # 新式：粤(2024)深圳市不动产权第 0123456 号
+            'property_cert': (
+                r'(?:[\u4e00-\u9fa5]{1,4}房地字第|FH)\s*\d{5,15}\s*号?'
+                # 不动产权第 N 号：可前缀省/直辖市/区县/(年份) 等组合
+                r'|(?:[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼])?'
+                r'\s*(?:[\(（]\s*\d{4}\s*[\)）])?\s*[\u4e00-\u9fa5]{2,12}'
+                r'\s*不动产权第\s*[A-Za-z0-9\s]{1,15}\s*号'
+            ),
 
             # 通用证书/批文编号（XX字 NNN 号、XX字第 NNN 号）
             'permit_number': r'[\u4e00-\u9fa5]{2,8}字\s*(?:第\s*)?\d{2,15}\s*号',

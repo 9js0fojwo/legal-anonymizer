@@ -554,7 +554,7 @@ body {
 </div>
 
 <div class="main">
-  <!-- Mode switch: 单文件模式 vs 批量模式 -->
+  <!-- Mode switch: 单文件 / 批量 / 还原 -->
   <div style="display:flex;justify-content:center;gap:0;margin-bottom:18px;background:#f0f2f5;padding:4px;border-radius:10px;width:fit-content;margin-left:auto;margin-right:auto;">
     <button id="mode-single-btn" class="btn"
             style="padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;"
@@ -562,6 +562,9 @@ body {
     <button id="mode-batch-btn" class="btn"
             style="padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;"
             onclick="switchMode('batch')">批量处理</button>
+    <button id="mode-restore-btn" class="btn"
+            style="padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;"
+            onclick="switchMode('restore')">脱敏还原</button>
   </div>
 
   <!-- Stepper（仅单文件模式） -->
@@ -602,6 +605,15 @@ body {
           <select id="batch-mask-strategy" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;">
             <option value="placeholder">占位符（[PERSON_1]）</option>
             <option value="partial">部分掩码（138****5678）</option>
+            <option value="whitebox">白框遮掩（PDF：纯白框无文字）</option>
+          </select>
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;">
+          <span>占位符样式：</span>
+          <select id="batch-placeholder-style" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;">
+            <option value="english_bracket">[PERSON_1]（英文）</option>
+            <option value="chinese_angle">&lt;人物1&gt;（中文）</option>
+            <option value="chinese_bracket">〔姓名1〕（中文方头）</option>
           </select>
         </label>
         <label style="display:flex;gap:6px;align-items:center;font-size:13px;">
@@ -639,6 +651,54 @@ body {
       <div id="batch-actions" class="hidden" style="display:flex;gap:10px;margin-top:14px;">
         <button class="btn btn-primary" onclick="downloadBatch()">&#128229; 下载全部（zip）</button>
         <button class="btn btn-outline" onclick="resetBatch()">处理新批次</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== 还原面板 ============== -->
+  <div id="restore-panel" class="hidden">
+    <div class="card">
+      <div class="card-title">脱敏还原</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:14px;">
+        把脱敏后的文本和映射字典（之前导出的 <code>_mapping.json</code>）粘进来或上传，把占位符还原成原始内容。
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">1. 脱敏后文本</label>
+        <textarea id="restore-text-input"
+                  placeholder="把脱敏后的文本粘进来..."
+                  style="width:100%;min-height:140px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;resize:vertical;"></textarea>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">2. 映射字典（mapping.json）</label>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <input type="file" id="restore-map-file" accept=".json"
+                 onchange="loadRestoreMapping(this)" style="font-size:13px;">
+          <span style="font-size:12px;color:#888;">— 或直接粘贴 JSON 内容到下面 ↓</span>
+        </div>
+        <textarea id="restore-map-input"
+                  placeholder='{"metadata":{...},"mapping":{"[PERSON_1]":{"original":"张三","type":"person"},...}}'
+                  style="width:100%;min-height:120px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical;"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="doRestore()">还原原文</button>
+        <button class="btn btn-outline" onclick="resetRestore()">清空</button>
+      </div>
+
+      <div id="restore-error" class="hidden" style="margin-top:12px;"></div>
+    </div>
+
+    <div id="restore-result-card" class="card hidden">
+      <div class="card-title">
+        还原结果 <span id="restore-stats" style="font-size:13px;color:var(--text-2);font-weight:400;"></span>
+      </div>
+      <textarea id="restore-output" readonly
+                style="width:100%;min-height:200px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fafafa;resize:vertical;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px;">
+        <button class="btn btn-outline" onclick="copyRestoreOutput()">📋 复制</button>
+        <button class="btn btn-outline" onclick="downloadRestoreOutput()">📥 下载 .txt</button>
       </div>
     </div>
   </div>
@@ -758,6 +818,16 @@ body {
             <div class="spinner"></div>
             <span id="analyzing-msg">正在分析文档，请稍候...</span>
           </div>
+          <!-- 进度条 + 时间预估 -->
+          <div id="analyze-progress-wrap" style="margin-top:12px;">
+            <div style="background:#f0f2f5;height:8px;border-radius:4px;overflow:hidden;">
+              <div id="analyze-progress-bar" style="background:linear-gradient(90deg,#3b82f6,#10b981);height:100%;width:0%;transition:width 0.4s;"></div>
+            </div>
+            <div id="analyze-progress-meta" style="margin-top:8px;font-size:13px;color:#666;display:flex;justify-content:space-between;">
+              <span id="analyze-pct-label">0%</span>
+              <span id="analyze-time-label"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -824,7 +894,18 @@ body {
             <label class="radio-item">
               <input type="radio" name="strategy" value="partial"> 部分掩码 张**
             </label>
+            <label class="radio-item">
+              <input type="radio" name="strategy" value="whitebox"> 白框遮掩（PDF 专用）
+            </label>
           </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:13px;">占位符样式</label>
+          <select id="placeholder-style" style="margin-left:8px;padding:5px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+            <option value="english_bracket">[PERSON_1] 英文方括号（默认）</option>
+            <option value="chinese_angle">&lt;人物1&gt; 中文尖括号</option>
+            <option value="chinese_bracket">〔姓名1〕 中文方头括号</option>
+          </select>
         </div>
       </div>
 
@@ -1139,21 +1220,32 @@ async function selectInboxFile(filename) {
 }
 
 // ==================== Analyze ====================
+function _fmtSec(s) {
+  if (!s || s < 1) return '0 秒';
+  if (s < 60) return s.toFixed(1) + ' 秒';
+  const m = Math.floor(s / 60), sec = Math.round(s - m * 60);
+  return `${m} 分 ${sec} 秒`;
+}
+
 async function analyzeDocument() {
   document.getElementById('analyze-btn').disabled = true;
   document.getElementById('analyzing').classList.remove('hidden');
   document.getElementById('analyze-error').classList.add('hidden');
+  document.getElementById('analyze-progress-bar').style.width = '0%';
+  document.getElementById('analyze-pct-label').textContent = '准备中...';
+  document.getElementById('analyze-time-label').textContent = '';
   const llmMsg = state.useLlm
     ? '正在分析文档（首次加载 OpenAI 模型需 10-20 秒）...'
     : state.useCnLlm
       ? '正在分析文档（首次加载中文 NER 模型需 5-10 秒）...'
       : '正在分析文档，请稍候...';
   document.getElementById('analyzing-msg').textContent = state.useOcr
-    ? '正在 OCR 识别，扫描版文件可能需要 1-2 分钟，请耐心等待...'
+    ? '正在 OCR 识别中...'
     : llmMsg;
 
   try {
-    const res = await fetch('/api/analyze', {
+    // 启动异步分析
+    const startRes = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1164,23 +1256,26 @@ async function analyzeDocument() {
         use_llm: state.useLlm,
       }),
     });
-    const data = await res.json();
-
-    if (data.error) {
+    const startData = await startRes.json();
+    if (!startRes.ok) {
       const errEl = document.getElementById('analyze-error');
       errEl.className = 'alert alert-error';
-      errEl.textContent = data.error;
+      errEl.textContent = startData.error || '启动失败';
       errEl.classList.remove('hidden');
+      document.getElementById('analyze-btn').disabled = false;
+      document.getElementById('analyzing').classList.add('hidden');
       return;
     }
+
+    // 轮询进度
+    const data = await pollAnalyzeStatus(state.sessionId);
+    if (!data) return;
 
     state.findings = data.findings;
     state.typeNames = data.type_names;
     state.excludedEntities = [];
-
     renderFindings(data);
     goToStep(2);
-
   } catch (e) {
     const errEl = document.getElementById('analyze-error');
     errEl.className = 'alert alert-error';
@@ -1190,6 +1285,86 @@ async function analyzeDocument() {
     document.getElementById('analyze-btn').disabled = false;
     document.getElementById('analyzing').classList.add('hidden');
   }
+}
+
+function pollAnalyzeStatus(sessionId) {
+  return new Promise((resolve, reject) => {
+    let tickTimer = null;
+    let lastData = null, lastFetchClient = 0;
+
+    const renderProgress = () => {
+      if (!lastData) return;
+      const now = Date.now() / 1000;
+      const drift = lastFetchClient - (lastData.now || lastFetchClient);
+      let pct = lastData.percent || 0;
+      // OCR 阶段：用本地时钟内插，让进度条平滑
+      if (lastData.stage === 'ocr' && lastData.started_at) {
+        const elapsed = Math.max(0.1, now - drift - lastData.started_at);
+        const eta = lastData.eta_s || elapsed * 2;
+        const interp = Math.min(90, (elapsed / eta) * 90);
+        pct = Math.max(pct, interp);
+      }
+      document.getElementById('analyze-progress-bar').style.width = pct.toFixed(1) + '%';
+      const stageLabel = ({
+        queued: '排队中', ocr: 'OCR 识别中', detect: '检测敏感信息中', done: '完成', error: '错误',
+        ocr_page_done: 'OCR 识别中',
+      }[lastData.stage] || '处理中');
+      let pageInfo = '';
+      if (lastData.stage === 'ocr' && lastData.total > 0) {
+        pageInfo = `（第 ${lastData.current}/${lastData.total} 页）`;
+      }
+      document.getElementById('analyze-pct-label').textContent = `${stageLabel}${pageInfo} · ${pct.toFixed(0)}%`;
+
+      let elapsedClient = 0;
+      if (lastData.started_at) {
+        elapsedClient = Math.max(0, now - drift - lastData.started_at);
+      }
+      const remainEst = Math.max(0, (lastData.eta_s || 0) - elapsedClient);
+      const tEl = document.getElementById('analyze-time-label');
+      if (lastData.stage === 'done' && lastData.elapsed_s) {
+        tEl.textContent = `用时 ${_fmtSec(lastData.elapsed_s)}`;
+      } else if (lastData.eta_s > 0) {
+        tEl.textContent = `已用 ${_fmtSec(elapsedClient)} · 预计还需 ${_fmtSec(remainEst)}`;
+      } else {
+        tEl.textContent = `已用 ${_fmtSec(elapsedClient)}`;
+      }
+    };
+
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/analyze/status/${sessionId}`);
+        const d = await r.json();
+        if (!r.ok) {
+          if (tickTimer) clearInterval(tickTimer);
+          reject(new Error(d.error || '查询进度失败'));
+          return;
+        }
+        lastData = d;
+        lastFetchClient = Date.now() / 1000;
+        renderProgress();
+        if (d.stage === 'error') {
+          if (tickTimer) clearInterval(tickTimer);
+          const errEl = document.getElementById('analyze-error');
+          errEl.className = 'alert alert-error';
+          errEl.textContent = '分析失败: ' + (d.error || '');
+          errEl.classList.remove('hidden');
+          resolve(null);
+          return;
+        }
+        if (d.stage === 'done') {
+          if (tickTimer) clearInterval(tickTimer);
+          resolve(d.result);
+          return;
+        }
+        setTimeout(poll, 1500);
+      } catch (e) {
+        setTimeout(poll, 3000);
+      }
+    };
+
+    tickTimer = setInterval(renderProgress, 500);
+    poll();
+  });
 }
 
 function renderFindings(data) {
@@ -1413,6 +1588,7 @@ async function anonymizeDocument() {
   document.getElementById('anonymize-error').classList.add('hidden');
 
   try {
+    const phStyle = (document.getElementById('placeholder-style') || {}).value || 'english_bracket';
     const res = await fetch('/api/anonymize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1420,6 +1596,7 @@ async function anonymizeDocument() {
         session_id: state.sessionId,
         output_format: formats,  // 数组
         mask_strategy: strategy,
+        placeholder_style: phStyle,
         excluded_entities: state.excludedEntities,
       }),
     });
@@ -1694,20 +1871,107 @@ let batchState = { id: null, items: [], polling: null };
 function switchMode(mode) {
   const single = document.getElementById('single-mode-panel');
   const batch = document.getElementById('batch-panel');
+  const restore = document.getElementById('restore-panel');
   const stepper = document.getElementById('stepper-row');
   const sBtn = document.getElementById('mode-single-btn');
   const bBtn = document.getElementById('mode-batch-btn');
+  const rBtn = document.getElementById('mode-restore-btn');
+  // 默认全隐藏
+  single.classList.add('hidden'); stepper.classList.add('hidden');
+  batch.classList.add('hidden'); restore.classList.add('hidden');
+  const inactive = 'padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;';
+  const active = 'padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;';
+  sBtn.style.cssText = inactive; bBtn.style.cssText = inactive; rBtn.style.cssText = inactive;
   if (mode === 'batch') {
-    single.classList.add('hidden'); stepper.classList.add('hidden');
     batch.classList.remove('hidden');
-    sBtn.style.cssText = 'padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;';
-    bBtn.style.cssText = 'padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;';
+    bBtn.style.cssText = active;
+  } else if (mode === 'restore') {
+    restore.classList.remove('hidden');
+    rBtn.style.cssText = active;
   } else {
     single.classList.remove('hidden'); stepper.classList.remove('hidden');
-    batch.classList.add('hidden');
-    bBtn.style.cssText = 'padding:8px 22px;border:none;background:transparent;color:#666;border-radius:7px;font-weight:500;font-size:14px;';
-    sBtn.style.cssText = 'padding:8px 22px;border:none;background:#fff;color:#1a1a1a;border-radius:7px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);font-size:14px;';
+    sBtn.style.cssText = active;
   }
+}
+
+// ==================== Restore Mode ====================
+function loadRestoreMapping(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('restore-map-input').value = e.target.result;
+  };
+  reader.readAsText(f);
+}
+
+async function doRestore() {
+  const text = document.getElementById('restore-text-input').value.trim();
+  const mapRaw = document.getElementById('restore-map-input').value.trim();
+  const errEl = document.getElementById('restore-error');
+  errEl.classList.add('hidden');
+  if (!text || !mapRaw) {
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '请同时提供脱敏后文本和映射字典 JSON';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  let mapping;
+  try {
+    mapping = JSON.parse(mapRaw);
+  } catch (e) {
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '映射字典 JSON 解析失败：' + e.message;
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const r = await fetch('/api/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, mapping }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.className = 'alert alert-error';
+      errEl.textContent = data.error || '还原失败';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    document.getElementById('restore-output').value = data.restored;
+    document.getElementById('restore-stats').textContent = `（${data.replacements} 处占位符已还原）`;
+    document.getElementById('restore-result-card').classList.remove('hidden');
+  } catch (e) {
+    errEl.className = 'alert alert-error';
+    errEl.textContent = '请求失败：' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+function resetRestore() {
+  document.getElementById('restore-text-input').value = '';
+  document.getElementById('restore-map-input').value = '';
+  document.getElementById('restore-output').value = '';
+  document.getElementById('restore-map-file').value = '';
+  document.getElementById('restore-result-card').classList.add('hidden');
+  document.getElementById('restore-error').classList.add('hidden');
+}
+
+function copyRestoreOutput() {
+  const out = document.getElementById('restore-output');
+  out.select();
+  document.execCommand('copy');
+}
+
+function downloadRestoreOutput() {
+  const text = document.getElementById('restore-output').value;
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '还原后文本.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 document.getElementById('batch-file-input').addEventListener('change', (e) => {
@@ -1762,6 +2026,7 @@ function renderBatchList() {
 async function startBatch() {
   if (!batchState.id) return;
   const strategy = document.getElementById('batch-mask-strategy').value;
+  const phStyle = (document.getElementById('batch-placeholder-style') || {}).value || 'english_bracket';
   const fmt = document.getElementById('batch-output-format').value;
   const formats = fmt === 'auto' ? null : [fmt];
   document.getElementById('batch-start-btn').disabled = true;
@@ -1772,6 +2037,7 @@ async function startBatch() {
       body: JSON.stringify({
         batch_id: batchState.id,
         mask_strategy: strategy,
+        placeholder_style: phStyle,
         output_formats: formats,
       }),
     });
@@ -1792,10 +2058,19 @@ async function pollBatch() {
     const r = await fetch(`/api/batch/status/${batchState.id}`);
     const data = await r.json();
     if (!r.ok) return;
+    batchState.lastData = data;
+    batchState.lastFetchClient = Date.now() / 1000;
     renderBatchProgress(data);
     if (!data.all_finished) {
+      // 正在跑时频繁轮询 + 本地 tick 更新进度（让进度条平滑增长）
       batchState.polling = setTimeout(pollBatch, 1500);
+      if (!batchState.tickTimer) {
+        batchState.tickTimer = setInterval(() => {
+          if (batchState.lastData) renderBatchProgress(batchState.lastData);
+        }, 500);
+      }
     } else {
+      if (batchState.tickTimer) { clearInterval(batchState.tickTimer); batchState.tickTimer = null; }
       document.getElementById('batch-actions').classList.remove('hidden');
     }
   } catch (e) {
@@ -1803,25 +2078,84 @@ async function pollBatch() {
   }
 }
 
+function _fmtDuration(s) {
+  if (s < 60) return s.toFixed(1) + ' 秒';
+  const m = Math.floor(s / 60), sec = Math.round(s - m * 60);
+  return `${m} 分 ${sec} 秒`;
+}
+
 function renderBatchProgress(data) {
-  document.getElementById('batch-progress-bar').style.width = data.progress + '%';
-  document.getElementById('batch-progress-label').textContent = `（${data.done}/${data.total} 完成）`;
+  // 服务器时间和本地时间的偏差（让 elapsed 跨网络抖动也准）
+  const now = Date.now() / 1000;
+  const drift = (batchState.lastFetchClient || now) - (data.now || now);
+
+  // 估计总剩余时间（所有未完成的 ETA 减去已耗）
+  let pendingTotalSec = 0, doneCount = 0, totalElapsed = 0;
+  let avgPercent = 0;
+  for (const it of data.items) {
+    if (it.status === 'done') {
+      avgPercent += 100;
+      totalElapsed += it.elapsed_s || 0;
+      doneCount++;
+    } else if (it.status === 'error' || it.status === 'rejected') {
+      avgPercent += 100;
+    } else if (it.status === 'processing' && it.started_at) {
+      const elapsed = Math.max(0.1, now - drift - it.started_at);
+      const eta = it.eta_s || elapsed * 2;
+      const pct = Math.min(98, (elapsed / eta) * 100);
+      avgPercent += pct;
+      pendingTotalSec += Math.max(0, eta - elapsed);
+    } else {
+      // 排队中
+      pendingTotalSec += it.eta_s || 5;
+    }
+  }
+  const overall = data.items.length ? avgPercent / data.items.length : 0;
+  document.getElementById('batch-progress-bar').style.width = overall.toFixed(1) + '%';
+
+  let label = `（${data.done}/${data.total} 完成 · ${overall.toFixed(0)}%）`;
+  if (!data.all_finished && pendingTotalSec > 0) {
+    label += ` · 预计还需 ${_fmtDuration(pendingTotalSec)}`;
+  }
+  if (data.all_finished && totalElapsed > 0) {
+    label += ` · 总耗时 ${_fmtDuration(totalElapsed)}`;
+  }
+  document.getElementById('batch-progress-label').textContent = label;
+
   const html = data.items.map(it => {
-    let badge, color;
-    if (it.status === 'done') { badge = '✓ 完成'; color = '#10b981'; }
-    else if (it.status === 'error') { badge = '✗ 错误'; color = '#ef4444'; }
-    else if (it.status === 'processing') { badge = '⏳ ' + (it.stage === 'detect' ? '检测中' : '脱敏中'); color = '#3b82f6'; }
-    else if (it.status === 'rejected') { badge = '✗ 跳过'; color = '#999'; }
-    else { badge = '排队中'; color = '#999'; }
+    let badge, color, itemPct = 0, etaTxt = '';
+    if (it.status === 'done') {
+      badge = `✓ 完成 (${(it.elapsed_s || 0).toFixed(1)}s)`; color = '#10b981'; itemPct = 100;
+    } else if (it.status === 'error') {
+      badge = '✗ 错误'; color = '#ef4444'; itemPct = 100;
+    } else if (it.status === 'rejected') {
+      badge = '✗ 跳过'; color = '#999'; itemPct = 100;
+    } else if (it.status === 'processing' && it.started_at) {
+      const elapsed = Math.max(0.1, now - drift - it.started_at);
+      const eta = it.eta_s || elapsed * 2;
+      itemPct = Math.min(98, (elapsed / eta) * 100);
+      const remain = Math.max(0, eta - elapsed);
+      const stageLabel = it.stage === 'detect' ? '检测中' : '脱敏中';
+      badge = `⏳ ${stageLabel} ${itemPct.toFixed(0)}%`; color = '#3b82f6';
+      etaTxt = `已 ${elapsed.toFixed(0)}s / 约 ${eta.toFixed(0)}s`;
+    } else {
+      badge = '排队中'; color = '#999'; itemPct = 0;
+      if (it.eta_s) etaTxt = `预计 ${it.eta_s.toFixed(0)}s`;
+    }
     const detail = it.status === 'done'
-      ? `${it.total_matched} 实体，${it.replacements_made} 处替换${it.is_scanned ? ' · 扫描版' : ''}`
-      : (it.error ? escHtml(it.error.slice(0, 80)) : '');
+      ? `${it.total_matched} 实体 · ${it.replacements_made} 处替换${it.is_scanned ? ' · 扫描版' : ''}`
+      : (it.error ? escHtml(it.error.slice(0, 80)) : etaTxt);
     return `
-      <div style="display:flex;align-items:center;padding:9px 10px;border-bottom:1px solid #f0f0f0;font-size:13px;">
-        <span style="flex:0 0 30px;color:#999;">#${it.idx}</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(it.name)}</span>
-        <span style="flex:0 0 220px;color:#888;font-size:12px;">${detail}</span>
-        <span style="flex:0 0 100px;color:${color};text-align:right;font-weight:500;">${badge}</span>
+      <div style="padding:10px 10px;border-bottom:1px solid #f0f0f0;font-size:13px;">
+        <div style="display:flex;align-items:center;">
+          <span style="flex:0 0 30px;color:#999;">#${it.idx}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(it.name)}</span>
+          <span style="flex:0 0 240px;color:#888;font-size:12px;">${detail}</span>
+          <span style="flex:0 0 130px;color:${color};text-align:right;font-weight:500;">${badge}</span>
+        </div>
+        <div style="margin-top:6px;background:#f0f2f5;height:4px;border-radius:2px;overflow:hidden;margin-left:30px;">
+          <div style="background:${color};height:100%;width:${itemPct}%;transition:width 0.3s;"></div>
+        </div>
       </div>
     `;
   }).join('');
@@ -1835,7 +2169,8 @@ function downloadBatch() {
 
 function resetBatch() {
   if (batchState.polling) clearTimeout(batchState.polling);
-  batchState = { id: null, items: [], polling: null };
+  if (batchState.tickTimer) clearInterval(batchState.tickTimer);
+  batchState = { id: null, items: [], polling: null, tickTimer: null };
   document.getElementById('batch-file-list').classList.add('hidden');
   document.getElementById('batch-options').classList.add('hidden');
   document.getElementById('batch-progress').classList.add('hidden');

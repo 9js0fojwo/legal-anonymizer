@@ -75,6 +75,44 @@ class LegalAnonymizer:
         """
         self.masker.set_all_strategy(strategy)
 
+    def set_placeholder_style(self, style: str):
+        """
+        切换占位符风格：
+          english_bracket（默认 [PERSON_1]）/ chinese_angle（<人物1>）/ chinese_bracket（〔姓名1〕）
+        """
+        self.masker.set_placeholder_style(style)
+
+    @staticmethod
+    def restore_text(anonymized_text: str, mapping_data) -> str:
+        """
+        把脱敏后文本按 mapping 字典反向恢复成原文
+
+        Args:
+            anonymized_text: 脱敏后的文本
+            mapping_data: 一个 dict，可以是两种格式：
+                1. {"[PERSON_1]": {"original": "张三", "type": "person"}, ...}
+                   （来自工具导出的 mapping.json 的 "mapping" 字段）
+                2. {"[PERSON_1]": "张三", ...}（简单倒映）
+
+        Returns:
+            还原后的文本
+        """
+        if not isinstance(mapping_data, dict):
+            return anonymized_text
+        # 兼容 {占位符: {original, type}} 和 {占位符: original}
+        flat = {}
+        for ph, val in mapping_data.items():
+            if isinstance(val, dict):
+                orig = val.get('original', '')
+            else:
+                orig = str(val)
+            if ph and orig:
+                flat[ph] = orig
+        # 长占位符先替换（避免 [PERSON_1] 把 [PERSON_11] 部分污染）
+        for ph in sorted(flat.keys(), key=len, reverse=True):
+            anonymized_text = anonymized_text.replace(ph, flat[ph])
+        return anonymized_text
+
     def add_custom_entity(self, entity_type: str, name: str):
         """
         添加自定义实体
@@ -175,6 +213,7 @@ class LegalAnonymizer:
         anonymized_content: str,
         use_ocr: bool,
         ocr_engine: str = 'rapidocr',
+        whitebox_only: bool = False,
     ) -> List[Tuple[str, str]]:
         """
         按目标格式输出一份文件。优先级：
@@ -199,13 +238,15 @@ class LegalAnonymizer:
             if use_ocr:
                 # 扫描版 PDF：图像视觉脱敏（保留原页面样式）
                 if self.processor.anonymize_scanned_pdf_inplace(
-                    str(input_path), str(target_path), self.masker.mapping, ocr_engine
+                    str(input_path), str(target_path), self.masker.mapping, ocr_engine,
+                    whitebox_only=whitebox_only,
                 ):
                     return [('output_pdf', str(target_path))]
             else:
                 # 文字层 PDF：传统 redact（保留所有原格式）
                 if self.processor.anonymize_pdf_inplace(
-                    str(input_path), str(target_path), self.masker.mapping
+                    str(input_path), str(target_path), self.masker.mapping,
+                    whitebox_only=whitebox_only,
                 ):
                     return [('output_pdf', str(target_path))]
             # 两条路径都失败时回退到模板
@@ -538,7 +579,8 @@ class LegalAnonymizer:
         use_ocr: bool = False,
         ocr_engine: str = 'rapidocr',
         save_text_backup: bool = True,
-        save_mapping: bool = True
+        save_mapping: bool = True,
+        pdf_whitebox: bool = False,
     ) -> Dict:
         """
         脱敏文件
@@ -624,6 +666,7 @@ class LegalAnonymizer:
                     anonymized_content=anonymized_content,
                     use_ocr=use_ocr,
                     ocr_engine=ocr_engine,
+                    whitebox_only=pdf_whitebox,
                 )
                 saved_files.extend(main_files)
 

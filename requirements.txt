@@ -19,6 +19,12 @@ paddlepaddle>=3.0.0     # PaddlePaddle deep learning framework (recommended) - �
 paddleocr>=3.0.0        # PaddleOCR - high accuracy Chinese OCR (recommended) - 高精度中文OCR（推荐）
 pytesseract>=0.3.10     # Tesseract OCR fallback - Tesseract OCR备选
 
+# Visual redaction for scanned PDFs (required to preserve original page images)
+# 扫描版 PDF 视觉脱敏必装：保留盖章/签名/版式，只覆盖白框/占位符
+# 没装这两个的话，扫描版 PDF 会回退到模板渲染（仿宋小四），原版式丢失
+rapidocr>=3.8.0         # RapidOCR - returns char-level bbox - 字符级位置框
+onnxruntime>=1.20.0     # RapidOCR ONNX backend - 推理后端
+
 # LLM-based PII detectors (optional)
 # 可选：补充检测层，补规则盲区。两个模型独立开启，互不冲突
 #   --cn-llm : uer/roberta-base-finetuned-cluener2020-chinese (~400MB)
