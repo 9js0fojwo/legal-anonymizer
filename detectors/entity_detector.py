@@ -41,6 +41,7 @@ PERSON_CONTEXT_KEYWORDS = [
     '委托代理人', '委托诉讼代理人', '诉讼代理人', '辩护人', '代理人',
     '法定代表人', '负责人', '执行人', '实际控制人', '控股股东', '经营者',
     '审判长', '审判员', '代理审判员', '书记员', '陪审员', '人民陪审员',
+    '法官助理', '主审法官', '承办法官', '审判员',
     '证人', '鉴定人', '翻译人员',
     '执行董事', '监事', '总经理', '经理', '董事长', '董事',
     '经办人', '联系人', '担保人', '保证人', '借款人', '贷款人',
@@ -105,6 +106,11 @@ class EntityDetector:
         '出借人', '借款人', '出卖人', '买受人', '承租人', '出租人',
         '委托人', '受托人', '代理人', '目标公司',
         '发行人', '主承销商', '联席主承销商',
+        # 担保 / 工程合同里的通用角色词
+        '业主', '承包商', '分包商', '发包方', '发包人', '承包人',
+        '保证人', '担保人', '债权人', '债务人', '抵押人', '抵押权人',
+        '质押人', '质权人', '受益人', '受让人', '让与人', '转让方', '受让方',
+        '卖方', '买方', '出租方', '承租方', '业主方', '工程方', '客户',
     }
 
     def __init__(self):
@@ -547,7 +553,7 @@ class EntityDetector:
             judicial_pattern = re.compile(
                 r'(?:审\s*判\s*长|审\s*判\s*员|代\s*理\s*审\s*判\s*员|'
                 r'书\s*记\s*员|陪\s*审\s*员|人\s*民\s*陪\s*审\s*员|'
-                r'主\s*审\s*法\s*官|承\s*办\s*法\s*官|'
+                r'法\s*官\s*助\s*理|主\s*审\s*法\s*官|承\s*办\s*法\s*官|审\s*判\s*员|'
                 r'仲\s*裁\s*员|首\s*席\s*仲\s*裁\s*员)'
                 r'[：:\s]+'
                 r'([一-龥](?:[ \t　]*[一-龥]){1,3})'
@@ -559,6 +565,57 @@ class EntityDetector:
                 candidate = re.sub(r'\s+', '', raw)
                 if 2 <= len(candidate) <= 4 and self._is_valid_name(candidate):
                     detected.add((candidate, 'person'))
+
+            # 模式：多人并列 + 角色后缀
+            # "王晓琪和柳峰分别作为...的法定代表人" / "张三、李四、王五任董事"
+            # 名字 2-4 字，使用 lookahead 防止吞入"分别/作为"等连接词；连接符为 和/与/及/、/，
+            # 角色词、连接符、动词
+            # 名字 NAME_GREEDY 用 lookahead "下一个字必须是 连接符/动词 起始字/标点"，
+            # 防止把"分别"等连接词吞进姓名末尾
+            multi_name_role = re.compile(
+                r'([一-龥]{2,4})(?=[、，,和与及分作担任为是系出\s的])'
+                r'\s*[、，,和与及]\s*'
+                r'([一-龥]{2,4})(?=[、，,和与及分作担任为是系出\s的])'
+                r'(?:\s*[、，,和与及]\s*([一-龥]{2,4})(?=[、，,和与及分作担任为是系出\s的]))?'
+                r'\s*(?:分别)?\s*(?:作为|担任|任|为|是|系|出任)'
+                r'[^\n]{0,30}'
+                r'(?:法定代表人|实际控制人|代表人|董事长|董事|监事|总经理|副总经理|经理'
+                r'|股东|合伙人|代理人|签字人|签名人|证人|被告|原告|当事人)'
+            )
+            for match in multi_name_role.finditer(text):
+                for grp_idx in (1, 2, 3):
+                    if grp_idx > match.lastindex:
+                        break
+                    candidate = match.group(grp_idx)
+                    if not candidate:
+                        continue
+                    # 贪婪可能吞入"分别/作为/担任"等连接词尾巴，剥掉
+                    for suf in ('分别', '作为', '担任', '出任'):
+                        if candidate.endswith(suf) and len(candidate) > len(suf) + 1:
+                            candidate = candidate[:-len(suf)]
+                            break
+                    if 2 <= len(candidate) <= 4 and self._is_valid_name(candidate):
+                        detected.add((candidate, 'person'))
+
+            # 模式：角色 + 为/是/系 + 多个姓名（用、，和 分隔）
+            # 例："原股东为宋明权、杨淑莉" "法定代表人为张三" "原告系李四、王五"
+            role_to_names = re.compile(
+                r'(?:法定代表人|实际控制人|代表人|原股东|现股东|控股股东|股东'
+                r'|执行董事|董事长|董事|监事|总经理|副总经理|经理'
+                r'|合伙人|代理人|证人|原告|被告|被告人|嫌疑人|被害人|当事人)'
+                r'\s*(?:为|是|系)\s*'
+                r'([一-龥]{2,4})'
+                r'(?:\s*[、，,和与及]\s*([一-龥]{2,4}))?'
+                r'(?:\s*[、，,和与及]\s*([一-龥]{2,4}))?'
+                r'(?=[。，,；;\s\n)）]|$)'
+            )
+            for match in role_to_names.finditer(text):
+                for grp_idx in (1, 2, 3):
+                    if match.lastindex is None or grp_idx > match.lastindex:
+                        break
+                    candidate = match.group(grp_idx)
+                    if candidate and 2 <= len(candidate) <= 4 and self._is_valid_name(candidate):
+                        detected.add((candidate, 'person'))
 
             # 模式：姓名 + 性别/年龄（法律文书常见格式）
             # "姜妍，女，" "张三，男，1990年" "李四（男，"

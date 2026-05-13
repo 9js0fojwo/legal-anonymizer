@@ -459,8 +459,11 @@ def anonymize_document():
         if effective_strategy:
             anonymizer.set_all_mask_strategy(effective_strategy)
 
-        # 占位符风格（中文/英文）—— 仅在 placeholder/whitebox 模式下生效
-        placeholder_style = data.get('placeholder_style', 'english_bracket')
+        # 占位符风格：'auto' 时根据文本中 CJK 占比自动选；whitebox 模式不画文字所以风格无关紧要
+        placeholder_style = _resolve_placeholder_style(
+            data.get('placeholder_style', 'auto'),
+            session.get('text', '') or '',
+        )
         anonymizer.set_placeholder_style(placeholder_style)
 
         # 注入用户词典 + 会话自定义实体
@@ -831,6 +834,52 @@ def _cleanup_batches():
         del batches[bid]
 
 
+def _detect_placeholder_style(text: str) -> str:
+    """根据文本字符分布自动选占位符风格：CJK ≥ 拉丁用中文，否则英文。
+    本工具面向中文法律场景，文本不足时默认中文。"""
+    if not text:
+        return 'chinese_bracket'
+    cjk = sum(1 for c in text if '一' <= c <= '鿿')
+    latin = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    total = cjk + latin
+    if total < 10:
+        return 'chinese_bracket'
+    return 'chinese_bracket' if cjk >= latin else 'english_bracket'
+
+
+def _peek_file_text(file_path: str, max_chars: int = 3000) -> str:
+    """快速取文件前几页/前几段文字（不跑 OCR）用于语言判断"""
+    try:
+        suffix = Path(file_path).suffix.lower()
+        if suffix == '.pdf':
+            import fitz
+            doc = fitz.open(file_path)
+            buf = []
+            for i in range(min(3, len(doc))):
+                buf.append(doc[i].get_text() or '')
+                if sum(len(s) for s in buf) >= max_chars:
+                    break
+            doc.close()
+            return ''.join(buf)[:max_chars]
+        if suffix in ('.docx',):
+            from docx import Document
+            d = Document(file_path)
+            return '\n'.join(p.text for p in d.paragraphs[:80])[:max_chars]
+        if suffix in ('.txt', '.md'):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read(max_chars)
+    except Exception:
+        return ''
+    return ''
+
+
+def _resolve_placeholder_style(requested: str, text: str = '') -> str:
+    """把 'auto' 解析成具体风格；其它值原样返回"""
+    if requested == 'auto':
+        return _detect_placeholder_style(text)
+    return requested or 'chinese_bracket'
+
+
 def _estimate_eta(file_path: str, is_scanned: bool) -> float:
     """根据文件类型/大小预估处理秒数（保守估计）"""
     suffix = Path(file_path).suffix.lower()
@@ -868,7 +917,12 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
         strategy = options.get('mask_strategy', 'placeholder')
         pdf_whitebox = (strategy == 'whitebox')
         anonymizer.set_all_mask_strategy('placeholder' if pdf_whitebox else strategy)
-        anonymizer.set_placeholder_style(options.get('placeholder_style', 'english_bracket'))
+        # 占位符风格：'auto' 时按文件内容判断中/英；whitebox 不画文字所以风格无关
+        sample = _peek_file_text(item['file_path']) if not pdf_whitebox else ''
+        ph_style = _resolve_placeholder_style(
+            options.get('placeholder_style', 'auto'), sample
+        )
+        anonymizer.set_placeholder_style(ph_style)
 
         # 注入用户词典
         ud = load_user_dict()
@@ -927,6 +981,34 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
         batch = batches.get(batch_id)
         if batch:
             batch['done'] = sum(1 for it in batch['items'] if it['status'] in ('done', 'error'))
+
+
+@app.route('/api/restore/extract', methods=['POST'])
+def restore_extract_text():
+    """从上传的脱敏后文件（pdf/docx/txt）提取纯文本，给还原页用"""
+    if 'file' not in request.files:
+        return jsonify({'error': '未选择文件'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': '文件名为空'}), 400
+    suffix = Path(f.filename).suffix.lower()
+    if suffix not in {'.txt', '.md', '.pdf', '.docx', '.doc'}:
+        return jsonify({'error': f'不支持的格式: {suffix}'}), 400
+    safe_name = f"restore_{uuid.uuid4().hex[:8]}_{f.filename}"
+    save_path = UPLOAD_DIR / safe_name
+    f.save(str(save_path))
+    try:
+        from anonymizer import LegalAnonymizer as _LA
+        a = _LA()
+        text = a.processor.extract_text(str(save_path), use_ocr=False)
+        return jsonify({'text': text, 'chars': len(text)})
+    except Exception as e:
+        return jsonify({'error': f'提取失败: {str(e)}'}), 500
+    finally:
+        try:
+            save_path.unlink()
+        except Exception:
+            pass
 
 
 @app.route('/api/restore', methods=['POST'])

@@ -739,6 +739,24 @@ class FileProcessor:
                 # 构建字符级 bbox 映射：允许 entity 跨行匹配
                 flat_text, char_rects = self._build_char_map(page, _fitz)
 
+                # 取页面正文的中位字号（让占位符字号跟原文一致，不再小一截）
+                page_font_sizes = []
+                try:
+                    pd = page.get_text("dict")
+                    for block in pd.get("blocks", []):
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                size = span.get("size", 0)
+                                if size and len(span.get("text", "")) > 0:
+                                    page_font_sizes.append(size)
+                except Exception:
+                    pass
+                page_font_sizes.sort()
+                page_default_size = (
+                    page_font_sizes[len(page_font_sizes) // 2]
+                    if page_font_sizes else 11
+                )
+
                 first_seen: set = set()  # 同一个 original 只替换一次占位符，余下清空
 
                 for original in sorted_originals:
@@ -756,7 +774,12 @@ class FileProcessor:
                                 rect.x0 - 0.5, rect.y0 - 1.5,
                                 rect.x1 + 0.5, rect.y1 + 1.5,
                             )
-                            fontsize = max(7, min(13, rect.height * 0.72))
+                            # 优先用页面正文的中位字号，兜底用 rect.height 估算
+                            fontsize = page_default_size
+                            # 如果原 rect 高度比页字号小很多（小字段），用 rect 估算更合适
+                            est = rect.height * 0.85
+                            if est < page_default_size * 0.7:
+                                fontsize = max(8, est)
                             page.add_redact_annot(
                                 padded,
                                 text="" if whitebox_only else (masked if ri == 0 else ""),
@@ -1136,10 +1159,17 @@ class FileProcessor:
                     if len(orig_norm) < 2:
                         continue
 
-                    # 数字/英文实体不要短匹配（容易误报），中文允许 2 字
+                    # 数字/英文实体不要短匹配（容易误报）；中文最少 3 字以避免"公司"/"国际"等通用词误中
                     is_alnum = orig_norm.replace('.', '').replace('-', '').isalnum() and \
                                all(ord(c) < 128 for c in orig_norm)
-                    min_match_len = 4 if is_alnum else 2
+                    if is_alnum:
+                        min_match_len = 4
+                    elif len(orig_norm) <= 3:
+                        # 实体本身就只 2-3 字（人名/品牌）：必须完整匹配
+                        min_match_len = len(orig_norm)
+                    else:
+                        # 长实体（4+ 字）：最少 3 字（避免"公司"等通用词误中，但 OCR 碎片化时仍能命中）
+                        min_match_len = 3
 
                     # 计算"独特识别部分"（如 "北京XX（深圳）律师事务所" → "XX"）
                     distinctive = get_distinctive_part(original, etype)
@@ -1207,15 +1237,17 @@ class FileProcessor:
                         #   - whitebox_only：强制不写任何文字，纯白框
                         #   - partial 掩码（mask 长度 == 实体长度）：写本行对应的切片（如"张*"）
                         #     这种掩码本身就有信息（"张*"显示有姓但不显示名），保留
-                        #   - 占位符模式（如 [PERSON_1]）：不写文字，纯白框
+                        #   - 占位符模式（如 [PERSON_1] / <人物1> / 〔姓名1〕）：在白框中央写完整占位符
                         if whitebox_only:
                             text_to_draw = ''
                         else:
                             same_length = len(masked) == len(orig_norm)
                             if same_length:
+                                # partial 模式：本行只画对应切片
                                 text_to_draw = masked[ent_start:ent_end]
                             else:
-                                text_to_draw = ''  # 占位符模式：只白框，不写文字
+                                # 占位符模式：每个出现都画完整占位符（哪怕跨行也各画一份）
+                                text_to_draw = masked
 
                         if text_to_draw:
                             line_h = ly1 - ly0

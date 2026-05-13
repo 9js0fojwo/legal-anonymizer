@@ -204,6 +204,21 @@ class LegalAnonymizer:
 
         return merged
 
+    @staticmethod
+    def _is_scanned_pdf(pdf_path: str, sample_pages: int = 3, threshold: int = 80) -> bool:
+        """判断 PDF 是不是扫描版（前 N 页文字层每页平均字符数 < threshold 视为扫描）"""
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            n = min(sample_pages, len(doc))
+            if n == 0:
+                return False
+            total = sum(len(doc[i].get_text("text").strip()) for i in range(n))
+            doc.close()
+            return total < threshold * n
+        except Exception:
+            return False
+
     def _write_format(
         self,
         fmt: str,
@@ -235,7 +250,12 @@ class LegalAnonymizer:
 
         # pdf → pdf
         if fmt == 'pdf' and input_suffix == '.pdf':
-            if use_ocr:
+            # 智能选路径：即使 use_ocr=True，但 PDF 本身有文字层就优先走 redact_annot
+            #（精度比 OCR 视觉脱敏高一个量级，字号也能保持原样）
+            actually_scanned = self._is_scanned_pdf(str(input_path))
+            visual_path = use_ocr and actually_scanned
+
+            if visual_path:
                 # 扫描版 PDF：图像视觉脱敏（保留原页面样式）
                 if self.processor.anonymize_scanned_pdf_inplace(
                     str(input_path), str(target_path), self.masker.mapping, ocr_engine,
@@ -345,7 +365,12 @@ class LegalAnonymizer:
             '人民政府', '管理委员会', '管委会', '司法厅', '司法部',
             '银行股份有限公司', '银行',
             '融资租赁', '租赁',
-            '商贸', '建筑', '工程', '科技', '实业', '投资', '管理', '运营',
+            # 行业修饰词（这些通常是品牌名后的形容描述，不是品牌本身）
+            '商贸', '建筑', '工程', '科技', '技术', '智能', '制造', '研发',
+            '能源', '医疗', '教育', '咨询', '网络', '服务', '物流', '化工',
+            '食品', '生物', '电子', '机械', '汽车', '地产', '房地产',
+            '实业', '投资', '管理', '运营', '控股',
+            # 物业/楼宇类
             '大厦', '广场', '中心', '大楼', '大酒店', '酒店', '商务',
         ], key=len, reverse=True)
 

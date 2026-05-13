@@ -665,21 +665,57 @@ body {
 
       <div style="margin-bottom:14px;">
         <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">1. 脱敏后文本</label>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:8px;">
+          可以从脱敏后下载的 .txt 文件直接上传，或把内容复制粘贴到下面输入框。
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <label for="restore-text-file"
+                 style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;
+                        background:#f0f7ff;border:1px dashed #91caff;border-radius:8px;
+                        cursor:pointer;font-size:13px;color:#003a8c;">
+            📁 <span id="restore-text-file-label">点击选择脱敏后文件（.docx / .pdf / .txt）</span>
+          </label>
+          <button id="restore-text-clear" type="button" onclick="clearRestoreText()" class="hidden"
+                  style="padding:8px 12px;background:#fff;border:1px solid #ffccc7;color:#cf1322;
+                         border-radius:6px;cursor:pointer;font-size:12px;">
+            ✕ 撤销重选
+          </button>
+        </div>
+        <input type="file" id="restore-text-file" accept=".txt,.md,.pdf,.docx,.doc"
+               onchange="loadRestoreText(this)" style="display:none;">
         <textarea id="restore-text-input"
-                  placeholder="把脱敏后的文本粘进来..."
+                  placeholder="或把脱敏后的文本粘进来..."
                   style="width:100%;min-height:140px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;resize:vertical;"></textarea>
       </div>
 
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">2. 映射字典（mapping.json）</label>
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
-          <input type="file" id="restore-map-file" accept=".json"
-                 onchange="loadRestoreMapping(this)" style="font-size:13px;">
-          <span style="font-size:12px;color:#888;">— 或直接粘贴 JSON 内容到下面 ↓</span>
+        <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">2. 上传脱敏映射文件</label>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:8px;">
+          脱敏时一起下载的 <code>_mapping.json</code> 文件，直接选上来即可。
         </div>
-        <textarea id="restore-map-input"
-                  placeholder='{"metadata":{...},"mapping":{"[PERSON_1]":{"original":"张三","type":"person"},...}}'
-                  style="width:100%;min-height:120px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical;"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label for="restore-map-file"
+                 style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;
+                        background:#f0f7ff;border:1px dashed #91caff;border-radius:8px;
+                        cursor:pointer;font-size:13px;color:#003a8c;">
+            📁 <span id="restore-map-file-label">点击选择 _mapping.json 文件</span>
+          </label>
+          <button id="restore-map-clear" type="button" onclick="clearRestoreMap()" class="hidden"
+                  style="padding:8px 12px;background:#fff;border:1px solid #ffccc7;color:#cf1322;
+                         border-radius:6px;cursor:pointer;font-size:12px;">
+            ✕ 撤销重选
+          </button>
+        </div>
+        <input type="file" id="restore-map-file" accept=".json"
+               onchange="loadRestoreMapping(this)" style="display:none;">
+        <div style="margin-top:10px;font-size:12px;">
+          <a href="javascript:void(0)" onclick="toggleRestoreMapPaste()"
+             id="restore-map-paste-toggle"
+             style="color:var(--text-3);text-decoration:underline;">高级：直接粘贴 JSON 内容 ▾</a>
+        </div>
+        <textarea id="restore-map-input" class="hidden"
+                  placeholder='{"mapping":{"[PERSON_1]":{"original":"张三","type":"person"},...}}'
+                  style="width:100%;min-height:100px;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical;margin-top:8px;"></textarea>
       </div>
 
       <div style="display:flex;gap:10px;">
@@ -762,6 +798,9 @@ body {
             </label>
             <div class="toggle-switch" id="ocr-switch" onclick="toggleOCR()"></div>
           </div>
+        </div>
+        <div id="ocr-textlayer-notice" class="hidden" style="background:#e7f3ff;border:1px solid #91caff;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#003a8c;">
+          ℹ️ <strong>检测到文字版 PDF</strong>，无需启用 OCR。直接关闭 OCR 处理速度更快、保留原版式更精确。
         </div>
         <div id="ocr-scanned-notice" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#856404;">
           &#9888;&#65039; <strong>检测到扫描版 PDF</strong>，已自动启用 OCR 识别。处理时间可能稍长，请耐心等待。
@@ -1123,14 +1162,20 @@ function onFileReady(data) {
       state.useOcr = true;
       document.getElementById('ocr-switch').classList.add('on');
       document.getElementById('ocr-scanned-notice').classList.remove('hidden');
+      document.getElementById('ocr-textlayer-notice').classList.add('hidden');
       document.getElementById('ocr-engine-option').classList.remove('hidden');
     } else {
+      // 文字版 PDF：明确提示用户不要开 OCR
+      state.useOcr = false;
+      document.getElementById('ocr-switch').classList.remove('on');
       document.getElementById('ocr-scanned-notice').classList.add('hidden');
+      document.getElementById('ocr-textlayer-notice').classList.remove('hidden');
       document.getElementById('ocr-engine-option').classList.add('hidden');
     }
   } else {
     document.getElementById('ocr-option').classList.add('hidden');
     document.getElementById('ocr-scanned-notice').classList.add('hidden');
+    document.getElementById('ocr-textlayer-notice').classList.add('hidden');
   }
 }
 
@@ -1901,8 +1946,76 @@ function loadRestoreMapping(input) {
   const reader = new FileReader();
   reader.onload = (e) => {
     document.getElementById('restore-map-input').value = e.target.result;
+    document.getElementById('restore-map-file-label').textContent =
+      `✓ 已加载 ${f.name}（${(f.size / 1024).toFixed(1)} KB）`;
+    document.getElementById('restore-map-clear').classList.remove('hidden');
   };
   reader.readAsText(f);
+}
+
+function clearRestoreText() {
+  document.getElementById('restore-text-file').value = '';
+  document.getElementById('restore-text-input').value = '';
+  document.getElementById('restore-text-file-label').textContent =
+    '点击选择脱敏后文件（.docx / .pdf / .txt）';
+  document.getElementById('restore-text-clear').classList.add('hidden');
+}
+
+function clearRestoreMap() {
+  document.getElementById('restore-map-file').value = '';
+  document.getElementById('restore-map-input').value = '';
+  document.getElementById('restore-map-file-label').textContent = '点击选择 _mapping.json 文件';
+  document.getElementById('restore-map-clear').classList.add('hidden');
+}
+
+async function loadRestoreText(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const lbl = document.getElementById('restore-text-file-label');
+  const clearBtn = document.getElementById('restore-text-clear');
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (ext === 'txt' || ext === 'md') {
+    // 纯文本本地直读
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('restore-text-input').value = e.target.result;
+      lbl.textContent = `✓ 已加载 ${f.name}（${(f.size / 1024).toFixed(1)} KB）`;
+      clearBtn.classList.remove('hidden');
+    };
+    reader.readAsText(f);
+    return;
+  }
+  // pdf/docx 走后端抽文字
+  lbl.textContent = `⏳ 正在解析 ${f.name}...`;
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await fetch('/api/restore/extract', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) {
+      lbl.textContent = `✗ ${data.error || '解析失败'}`;
+      clearBtn.classList.remove('hidden');
+      return;
+    }
+    document.getElementById('restore-text-input').value = data.text;
+    lbl.textContent = `✓ 已加载 ${f.name}（${data.chars} 字）`;
+    clearBtn.classList.remove('hidden');
+  } catch (e) {
+    lbl.textContent = `✗ 解析失败：${e.message}`;
+    clearBtn.classList.remove('hidden');
+  }
+}
+
+function toggleRestoreMapPaste() {
+  const ta = document.getElementById('restore-map-input');
+  const link = document.getElementById('restore-map-paste-toggle');
+  if (ta.classList.contains('hidden')) {
+    ta.classList.remove('hidden');
+    link.textContent = '收起粘贴框 ▴';
+  } else {
+    ta.classList.add('hidden');
+    link.textContent = '高级：直接粘贴 JSON 内容 ▾';
+  }
 }
 
 async function doRestore() {
@@ -1952,7 +2065,13 @@ function resetRestore() {
   document.getElementById('restore-text-input').value = '';
   document.getElementById('restore-map-input').value = '';
   document.getElementById('restore-output').value = '';
+  document.getElementById('restore-text-file').value = '';
   document.getElementById('restore-map-file').value = '';
+  document.getElementById('restore-text-file-label').textContent =
+    '点击选择脱敏后文件（.docx / .pdf / .txt）';
+  document.getElementById('restore-map-file-label').textContent = '点击选择 _mapping.json 文件';
+  document.getElementById('restore-text-clear').classList.add('hidden');
+  document.getElementById('restore-map-clear').classList.add('hidden');
   document.getElementById('restore-result-card').classList.add('hidden');
   document.getElementById('restore-error').classList.add('hidden');
 }
