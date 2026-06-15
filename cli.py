@@ -211,6 +211,14 @@ def main():
     anonymize_parser.add_argument('--cn-llm', action='store_true',
                                      help='启用 CLUENER 中文 NER (RoBERTa-base) 作为补充层 '
                                           '（~400MB；补规则漏掉的中文人名/公司/地址）')
+    anonymize_parser.add_argument('--ollama', action='store_true',
+                                     help='启用本地 Ollama 大模型作为第 5 补充层（无需额外下载，需本机运行 Ollama）')
+    anonymize_parser.add_argument('--ollama-url', default=None, metavar='URL',
+                                     help='Ollama 服务地址（默认 http://localhost:11434，'
+                                          '或由 LEGAL_ANONYMIZER_OLLAMA_URL 环境变量指定）')
+    anonymize_parser.add_argument('--ollama-model', default=None, metavar='MODEL',
+                                     help='Ollama 模型名（默认 qwen2.5:7b，'
+                                          '或由 LEGAL_ANONYMIZER_OLLAMA_MODEL 环境变量指定）')
     anonymize_parser.add_argument('--no-backup', action='store_true', help='不保存文本备份')
     anonymize_parser.add_argument('--no-mapping', action='store_true', help='不保存映射表')
     anonymize_parser.add_argument('-q', '--quiet', action='store_true', help='安静模式，只输出JSON')
@@ -228,6 +236,12 @@ def main():
                                 help='启用 OpenAI privacy-filter 作为补充检测层')
     analyze_parser.add_argument('--cn-llm', action='store_true',
                                 help='启用 CLUENER 中文 NER 作为补充层')
+    analyze_parser.add_argument('--ollama', action='store_true',
+                                help='启用本地 Ollama 大模型作为第 5 补充层')
+    analyze_parser.add_argument('--ollama-url', default=None, metavar='URL',
+                                help='Ollama 服务地址（默认 http://localhost:11434）')
+    analyze_parser.add_argument('--ollama-model', default=None, metavar='MODEL',
+                                help='Ollama 模型名（默认 qwen2.5:7b）')
     analyze_parser.add_argument('--context', action='store_true',
                                 help='显示每个检测结果的前后文，便于判断是否误报')
     analyze_parser.add_argument('--context-window', type=int, default=40,
@@ -241,9 +255,17 @@ def main():
 
     use_llm = getattr(args, 'llm', False)
     use_cn_llm = getattr(args, 'cn_llm', False)
+    use_ollama = getattr(args, 'ollama', False)
+    ollama_kw = {}
+    if getattr(args, 'ollama_url', None):
+        ollama_kw['base_url'] = args.ollama_url
+    if getattr(args, 'ollama_model', None):
+        ollama_kw['model'] = args.ollama_model
     anonymizer = LegalAnonymizer(
         use_llm=use_llm if use_llm else None,
         use_cn_llm=use_cn_llm if use_cn_llm else None,
+        use_ollama=use_ollama if use_ollama else None,
+        ollama_kwargs=ollama_kw or None,
     )
 
     if args.command == 'list-types':

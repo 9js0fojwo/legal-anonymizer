@@ -26,13 +26,27 @@ rapidocr>=3.8.0         # RapidOCR - returns char-level bbox - 字符级位置�
 onnxruntime>=1.20.0     # RapidOCR ONNX backend - 推理后端
 
 # LLM-based PII detectors (optional)
-# 可选：补充检测层，补规则盲区。两个模型独立开启，互不冲突
+# 可选：补充检测层，补规则盲区。三层各自独立开启，互不冲突
+#
 #   --cn-llm : uer/roberta-base-finetuned-cluener2020-chinese (~400MB)
 #              补规则漏掉的中文人名/公司/地址（含复姓）
+#              pip install torch transformers
+#
 #   --llm    : openai/privacy-filter 1.5B MoE (~2.6GB)
 #              补英文人名/地址/API token/国际电话
-# 首次启用会自动从 HuggingFace 下载到 ~/.cache/huggingface，之后离线推理
-# pip install torch transformers "httpx[socks]"
+#              pip install torch transformers "httpx[socks]"
+#
+#   --ollama : 本地部署的大模型（Qwen/Gemma 等），通过 Ollama API 调用
+#              无需额外安装 Python 依赖；需本机运行 Ollama（https://ollama.com）
+#              默认连接 http://localhost:11434，模型 qwen2.5:7b
+#              远端服务器（如 Tailscale 内网）：
+#                --ollama-url http://100.x.x.x:11434 --ollama-model qwen2.5:7b
+#              环境变量方式：
+#                LEGAL_ANONYMIZER_OLLAMA=1
+#                LEGAL_ANONYMIZER_OLLAMA_URL=http://100.x.x.x:11434
+#                LEGAL_ANONYMIZER_OLLAMA_MODEL=qwen2.5:7b
+#
+# --cn-llm 和 --llm 首次启用会从 HuggingFace 下载到 ~/.cache/huggingface，之后离线推理
 # transformers>=4.40.0
 # torch>=2.0.0
 

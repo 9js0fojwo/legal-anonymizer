@@ -15,6 +15,13 @@ from detectors.cn_ner_detector import (
     get_shared_cn_detector,
     is_cn_llm_enabled_via_env,
 )
+from detectors.ollama_detector import (
+    OllamaDetector,
+    get_shared_ollama_detector,
+    is_ollama_enabled_via_env,
+    ollama_url_from_env,
+    ollama_model_from_env,
+)
 from maskers.text_masker import TextMasker
 from processors.file_processor import FileProcessor
 
@@ -26,8 +33,10 @@ class LegalAnonymizer:
         self,
         use_llm: Optional[bool] = None,
         use_cn_llm: Optional[bool] = None,
+        use_ollama: Optional[bool] = None,
         llm_kwargs: Optional[Dict] = None,
         cn_llm_kwargs: Optional[Dict] = None,
+        ollama_kwargs: Optional[Dict] = None,
     ):
         """
         Args:
@@ -35,7 +44,12 @@ class LegalAnonymizer:
                      LEGAL_ANONYMIZER_LLM；False 关闭。
             use_cn_llm: 启用 CLUENER 中文 NER（中文人名/公司/地址等规则盲区）。
                         None 读环境变量 LEGAL_ANONYMIZER_CN_LLM；False 关闭。
-            llm_kwargs / cn_llm_kwargs: 分别透传给两个检测器
+            use_ollama: 启用本地 Ollama 大模型作为第 5 补充层。
+                        None 读环境变量 LEGAL_ANONYMIZER_OLLAMA；False 关闭。
+                        服务地址和模型名分别通过 ollama_kwargs 或环境变量配置：
+                          LEGAL_ANONYMIZER_OLLAMA_URL   默认 http://localhost:11434
+                          LEGAL_ANONYMIZER_OLLAMA_MODEL 默认 qwen2.5:7b
+            llm_kwargs / cn_llm_kwargs / ollama_kwargs: 分别透传给各检测器
         """
         self.pattern_detector = PatternDetector()
         self.entity_detector = EntityDetector()
@@ -46,15 +60,23 @@ class LegalAnonymizer:
             use_llm = is_llm_enabled_via_env()
         if use_cn_llm is None:
             use_cn_llm = is_cn_llm_enabled_via_env()
+        if use_ollama is None:
+            use_ollama = is_ollama_enabled_via_env()
         self.use_llm = bool(use_llm)
         self.use_cn_llm = bool(use_cn_llm)
+        self.use_ollama = bool(use_ollama)
 
         self.llm_detector: Optional[LLMDetector] = None
         self.cn_ner_detector: Optional[CNNERDetector] = None
+        self.ollama_detector: Optional[OllamaDetector] = None
         if self.use_llm:
             self.llm_detector = get_shared_detector(**(llm_kwargs or {}))
         if self.use_cn_llm:
             self.cn_ner_detector = get_shared_cn_detector(**(cn_llm_kwargs or {}))
+        if self.use_ollama:
+            kw = {"base_url": ollama_url_from_env(), "model": ollama_model_from_env()}
+            kw.update(ollama_kwargs or {})
+            self.ollama_detector = get_shared_ollama_detector(**kw)
 
     def set_mask_strategy(self, entity_type: str, strategy: str):
         """
@@ -192,12 +214,23 @@ class LegalAnonymizer:
                 merged.append((t, ty, p))
                 occupied.append((p, end))
 
-        # --- 第 5 步：同名全文一致性扩展 ---
+        # --- 第 5 层：本地 Ollama 大模型（仅补空位）---
+        if self.use_ollama and self.ollama_detector is not None:
+            ollama_entities = self.ollama_detector.detect(text, only_types, exclude_types)
+            occupied = [(p, p + len(t)) for t, _, p in merged]
+            for t, ty, p in ollama_entities:
+                end = p + len(t)
+                if any(p < oe and end > os_ for os_, oe in occupied):
+                    continue
+                merged.append((t, ty, p))
+                occupied.append((p, end))
+
+        # --- 第 7 步：同名全文一致性扩展 ---
         # 如果某个人名（如"张三"）在某处已被识别为 person，全文所有该姓名位置都补上
         # 仅针对人名和公司/机构名；避免泛地名/职位导致炸量
         merged = self._expand_same_name_occurrences(text, merged)
 
-        # --- 第 6 步：品牌核心词扩展 ---
+        # --- 第 8 步：品牌核心词扩展 ---
         # 对识别到的公司/律所/机构名，提取去除前后缀后的核心品牌词
         # 在全文中查找其单独出现位置，加入实体列表
         merged = self._add_distinctive_part_entities(text, merged)
