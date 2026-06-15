@@ -1,4 +1,4 @@
-# 法律文档脱敏工具 · Legal Anonymizer
+# Legal Anonymizer · 法律文档脱敏工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-green.svg)](https://www.python.org)
@@ -6,31 +6,134 @@
 [![Offline](https://img.shields.io/badge/Network-100%25%20Offline-success.svg)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-orange.svg)]()
 
-> 一款**完全本地运行**、**不联网不上传**的法律文书敏感信息脱敏工具。  
-> 律师、法务、合规人员的本地脱敏助手。  
-> by **黄灵宝同学**
-
-中文法律文书 100% 本地脱敏 · 支持中英混合涉外文件 · 一键输出 MD/DOCX/PDF 三格式 · 保留原文档字体排版盖章
+**[English](#english) · [中文](#中文)**
 
 ---
+
+<a id="english"></a>
+
+## English
+
+A **100% local, offline** anonymization tool for legal documents.  
+No data leaves your machine. No cloud APIs. No subscriptions.
+
+Built for lawyers, paralegals, and compliance teams who need to redact sensitive information before sharing documents — while keeping the original formatting intact.
+
+### Features
+
+- **Fully offline** — all processing happens on your computer; nothing is uploaded
+- **3-layer detection** — regex rules + Chinese NER (CLUENER) + English LLM (OpenAI privacy-filter, optional)
+- **30+ sensitive data types** — names (including compound surnames), companies, ID numbers, phone numbers, bank cards, case numbers, addresses, amounts, emails, API tokens, and more
+- **Triple output format** — one run produces **MD + DOCX + PDF** simultaneously
+- **Format-preserving** — DOCX→DOCX keeps fonts and layout; PDF→PDF redacts in-place, preserving stamps and page structure
+- **Dual OCR engines** — RapidOCR (fast, lightweight) by default; switch to PaddleOCR for complex layouts
+- **Chinese-English mixed documents** — handles bilingual legal filings, cross-border contracts, international arbitration materials
+- **Web UI + CLI** — drag-and-drop browser interface, or batch-process via command line
+
+### Quick Start
+
+#### macOS / Windows (recommended)
+
+1. Download the latest zip from **[Releases](../../releases)**
+2. Unzip anywhere (e.g., Desktop)
+3. Double-click:
+   - **macOS**: `【请双击我！】启动脱敏工具.command`
+   - **Windows**: `启动脱敏工具.bat`
+4. First run auto-installs dependencies and downloads the NER model (~400 MB)
+5. Browser opens at `http://127.0.0.1:8080` — start using immediately
+6. Subsequent launches skip to step 5 (everything cached)
+
+> **macOS security prompt?** Go to System Settings → Privacy & Security → scroll down → click "Open Anyway", enter your password, then double-click the file again.
+
+#### Manual install
+
+```bash
+git clone https://github.com/rainbow1111-lalala/legal-anonymizer.git
+cd legal-anonymizer
+pip3 install -r requirements.txt
+python3 web_app.py
+```
+
+### CLI Usage
+
+```bash
+# Anonymize a Word document
+python3 cli.py anonymize input.docx -o output.docx
+
+# Anonymize a PDF
+python3 cli.py anonymize input.pdf -o output.pdf
+
+# Scanned PDF with OCR
+python3 cli.py anonymize scan.pdf -o output.docx --ocr
+
+# Analyze only (no redaction)
+python3 cli.py analyze input.docx
+
+# List all supported sensitive data types
+python3 cli.py list-types
+```
+
+### Optional: Enable LLM Layers
+
+| Layer | Model | Size | What it catches |
+|---|---|---|---|
+| CN NER | `uer/roberta-base-finetuned-cluener2020-chinese` | ~400 MB | Chinese names (incl. compound), companies, addresses |
+| EN LLM | `openai/privacy-filter` (1.5B MoE) | ~2.6 GB | English names, addresses, international phone numbers, API tokens |
+
+```bash
+pip3 install torch transformers
+
+# Chinese NER only (recommended for Chinese documents)
+python3 cli.py anonymize input.docx -o output.docx --cn-llm
+
+# English LLM only (English-primary documents)
+python3 cli.py anonymize input.docx -o output.docx --llm
+
+# Both layers (Chinese-English mixed documents)
+python3 cli.py anonymize input.docx -o output.docx --cn-llm --llm
+```
+
+### Privacy & Security
+
+- Zero network calls during processing — `grep -r "requests\|urllib\|http" *.py` returns nothing for data paths
+- LLM models download once to `~/.cache/huggingface/`, then run fully offline
+- To enforce air-gap mode: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python3 web_app.py`
+
+### Docs
+
+- [`docs/项目报告.md`](docs/项目报告.md) — full technical report (architecture, benchmarks, development history)
+- [`docs/简明版报告.md`](docs/简明版报告.md) — summary version for sharing with colleagues
+- [`首次使用指南.pdf`](首次使用指南.pdf) — illustrated 13-chapter user guide (Chinese)
+- [`DISCLAIMER.md`](DISCLAIMER.md) — liability disclaimer (read before use)
+
+### Contributing
+
+- Found a missed detection? Open an issue with a (redacted) sample text
+- Found a false positive? Same
+- Want a new detection type? Open an issue to discuss before PR
+- Documentation improvements? PR directly
+
+### License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+---
+
+*Made with ❤️ by 黄灵宝同学（Rainbow Wong）*
+
+---
+
+<a id="中文"></a>
+
+## 中文
 
 > ⚠️ **使用前请阅读 [DISCLAIMER.md（免责声明）](DISCLAIMER.md)**：本工具是辅助性脱敏工具，**不能替代人工复核**。最终脱敏结果由使用者负责确认。
 
----
+一款**完全本地运行**、**不联网不上传**的法律文书敏感信息脱敏工具。律师、法务、合规人员的本地脱敏助手。
 
-## 📑 目录
+中文法律文书 100% 本地脱敏 · 支持中英混合涉外文件 · 一键输出 MD/DOCX/PDF 三格式 · 保留原文档字体排版盖章
 
-- [功能亮点](#-功能亮点)
-- [快速开始（普通用户）](#-快速开始普通用户)
-- [开发者用法（CLI/API）](#-开发者用法-cliapi)
-- [三层检测架构](#-三层检测架构)
-- [实测效果](#-实测效果)
-- [深入文档](#-深入文档)
-- [免责声明](#-免责声明)
-
----
-
-## ✨ 功能亮点
+### 功能亮点
 
 - 🔒 **100% 本地运行**：所有处理在你电脑上完成，不调用任何外部 API，不上传任何数据
 - 🎯 **三层智能检测**：正则规则 + 中文 NER（CLUENER）+ 英文 LLM（OpenAI privacy-filter，可选）
@@ -41,195 +144,40 @@
 - 🇨🇳 **中文友好**：复姓识别（欧阳/万俟/诸葛/皇甫/司马/上官）、PDF 排版换行自动合并
 - 🌐 **网页 + 命令行**：拖拽上传可视化操作，或 CLI 批处理，皆可
 
----
-
-## 🚀 快速开始（普通用户）
-
-### 推荐流程：下载 zip → 双击 .command → 浏览器自动打开
+### 快速开始（推荐）
 
 1. 在右侧 **[Releases](../../releases)** 页下载最新版 zip
 2. 解压到任意位置（如桌面）
-3. 双击文件夹中的：
+3. 双击：
    - **macOS**：`【请双击我！】启动脱敏工具.command`
    - **Windows**：`启动脱敏工具.bat`
-4. **首次启动**会自动完成：
-   - 安装 Python 依赖（约 800MB，3-5 分钟）
-   - 询问"**是否经常处理英文文书**？"（n = 仅中文模式，y = 多装 2.6GB 英文模型）
-   - **自动下载中文 NER 模型**（400MB，1-3 分钟，国内走 hf-mirror.com 镜像）
-   - 选 y 时再下载英文模型（2.6GB）
+4. 首次启动自动安装依赖、下载中文 NER 模型（~400MB，3-5 分钟）
 5. 浏览器自动打开 `http://127.0.0.1:8080`，开始用
-6. **以后再启动会直接跳到第 5 步**（依赖和模型都已缓存）
+6. 以后再启动直接到第 5 步（依赖和模型已缓存）
 
-> 详细图文步骤参见仓库根目录的 `首次使用指南.pdf`
+> **macOS 弹出安全提示？** 系统设置 → 隐私与安全性 → 向下滚动 → 点「仍要打开」→ 输入密码 → 再次双击文件
 
----
+### 手动安装
 
-## 快速启动（推荐）
+**第一步：确认有 Python 3.9+**
 
-### macOS 用户
-
-1. 解压 `legal-anonymizer.zip` 到任意位置
-2. 双击文件夹中的 **`【请双击我！】启动脱敏工具.command`**
-3. 首次运行会自动安装依赖，之后会自动打开浏览器
-
-> **首次打开遇到安全提示？** 这是 macOS 的正常安全机制，按以下步骤解除：
->
-> 1. 弹出「Apple 无法验证……是否包含恶意软件」时，点 **完成**（不要点「移到废纸篓」）
-> 2. 打开 **系统设置** → **隐私与安全性**
-> 3. 向下滚动到「安全性」区域，找到被阻止的提示
-> 4. 点击 **仍要打开** → 输入密码确认
-> 5. 再次双击该文件，点弹窗中的 **打开**
-> 6. 之后再双击就不会再弹提示了
->
-> 详细图文指引请参阅 **`macOS安全设置指引.md`**
-
-### Windows 用户
-
-1. 解压后双击 **`启动脱敏工具.bat`**
-
----
-
-## 手动安装（如果快速启动不生效）
-
-### 第一步：确认电脑有 Python
-
-**macOS：** 按 `Command + 空格`，搜索 `终端`（或 `Terminal`），打开后输入：
-
-```
-python3 --version
+```bash
+python3 --version   # macOS
+python --version    # Windows
 ```
 
-**Windows：** 按 `Win + R`，输入 `cmd` 回车，然后输入：
+没有则去 https://www.python.org/downloads/ 安装（Windows 安装时勾选 `Add Python to PATH`）。
 
-```
-python --version
-```
+**第二步：安装并启动**
 
-如果显示 `Python 3.x.x`（比如 `Python 3.11.3`），说明已安装，跳到第二步。
-
-如果提示"未找到命令"或"不是内部命令"，需要先安装 Python：
-- 打开 https://www.python.org/downloads/
-- 下载最新版本，运行安装程序
-- **Windows 用户注意：安装时必须勾选 `Add Python to PATH`（界面最下方的复选框）**
-- 安装完成后关闭并重新打开终端，再次输入 `python3 --version`（macOS）或 `python --version`（Windows）确认
-
-### 第二步：解压并进入项目文件夹
-
-将下载的 `legal-anonymizer.zip` 解压到任意位置（比如桌面），然后在终端中进入该文件夹：
-
-**macOS：**
-```
-cd ~/Desktop/legal-anonymizer
+```bash
+git clone https://github.com/rainbow1111-lalala/legal-anonymizer.git
+cd legal-anonymizer
+pip3 install -r requirements.txt   # Windows 用 pip
+python3 web_app.py                  # Windows 用 python
 ```
 
-**Windows：**
-```
-cd %USERPROFILE%\Desktop\legal-anonymizer
-```
-
-> 提示：也可以在终端中输入 `cd `（注意 cd 后面有一个空格），然后把文件夹从 Finder/资源管理器 拖拽到终端窗口，会自动填入路径，再按回车。
-
-### 第三步：安装依赖（仅首次需要）
-
-**macOS：**
-```
-pip3 install -r requirements.txt
-```
-
-**Windows：**
-```
-pip install -r requirements.txt
-```
-
-如果提示 `pip: command not found`，尝试：
-```
-python3 -m pip install -r requirements.txt
-```
-或（Windows）：
-```
-python -m pip install -r requirements.txt
-```
-
-等待安装完成，看到没有红色报错即可。
-
-### 第四步：启动
-
-**macOS：**
-```
-python3 web_app.py
-```
-
-**Windows：**
-```
-python web_app.py
-```
-
-启动后会自动打开浏览器。如果没有自动打开，手动在浏览器地址栏输入终端中显示的地址（通常是 `http://127.0.0.1:8080`）。
-
-看到网页界面即可开始使用。**不要关闭终端窗口**，关闭终端 = 停止服务。
-
----
-
-## 使用方法
-
-1. 在网页中上传文件（拖拽或点击选择），支持 PDF、DOCX、TXT
-2. 点击"开始分析"，工具会自动识别敏感信息
-3. 检查识别结果，可以手动添加或取消勾选
-4. 点击"执行脱敏"，下载脱敏后的文件
-
-**扫描版 PDF**：工具会自动检测并提示启用 OCR。如需 OCR 支持，额外安装：
-
-macOS：
-```
-pip3 install pillow pytesseract
-brew install tesseract tesseract-lang
-```
-
-Windows：
-```
-pip install pillow pytesseract
-```
-然后从 https://github.com/UB-Mannheim/tesseract/wiki 下载安装 Tesseract，安装时勾选中文语言包。
-
----
-
-## 常见问题
-
-### Q: `pip install` 报错 `Permission denied`
-A: 在命令前加 `--user`：
-```
-pip3 install --user -r requirements.txt
-```
-
-### Q: 启动后浏览器没有自动打开
-A: 手动打开浏览器，输入终端中显示的地址，通常是 `http://127.0.0.1:8080`
-
-### Q: 启动报错 `Address already in use`
-A: 端口被占用，程序会自动尝试 8080-8099 端口。如果还是失败，关掉其他占用端口的程序后重试。
-
-### Q: Windows 上 `python` 命令打开了 Microsoft Store
-A: 在系统设置中关闭"应用执行别名"中的 Python，或直接使用完整路径运行。
-
-### Q: macOS 提示 `command not found: python3`
-A: 需要安装 Python，见第一步。或者尝试安装 Xcode 命令行工具：
-```
-xcode-select --install
-```
-
-### Q: 报错 `ModuleNotFoundError: No module named 'flask'`
-A: 依赖没安装成功，重新执行第三步。确保 pip 和 python 是同一个版本：
-```
-python3 -m pip install -r requirements.txt
-```
-
-### Q: DOCX 输出格式和原文不一样
-A: 输入 DOCX → 输出 DOCX 时会自动保留原始格式（字体、字号、排版）。如果输入是 PDF，输出的 DOCX 是重新生成的。
-
----
-
-## 命令行用法（高级）
-
-不需要网页界面也可以直接用命令行：
+### 命令行用法
 
 ```bash
 # 脱敏 Word 文档
@@ -248,30 +196,16 @@ python3 cli.py analyze input.docx
 python3 cli.py list-types
 ```
 
----
-
-## 可选：启用 LLM 补充检测（三层检测架构）
-
-本工具原生用**正则 + 中文规则**，但复杂中文法律文书里规则层会漏**人名/公司/地址**（特别是没有"原告/被告"关键词的、含复姓的、边界复杂的）。可以叠加两个 LLM 做补充：
+### 可选：启用 LLM 补充检测
 
 | 层 | 模型 | 大小 | 主要补盲 |
 |---|---|---|---|
-| CN NER | `uer/roberta-base-finetuned-cluener2020-chinese` | ~400 MB | **中文人名（含复姓）、中文公司、中文地址** |
-| OpenAI | `openai/privacy-filter`（1.5B MoE） | ~2.6 GB | **英文人名、英文地址、国际电话、API token** |
-
-**两层都按需开启，互不冲突**。中文文书只开 CN NER 够用；中英混合文书两个都开。
-
-### 一次性安装
+| CN NER | `uer/roberta-base-finetuned-cluener2020-chinese` | ~400 MB | 中文人名（含复姓）、中文公司、中文地址 |
+| OpenAI | `openai/privacy-filter`（1.5B MoE） | ~2.6 GB | 英文人名、英文地址、国际电话、API token |
 
 ```bash
-pip3 install torch transformers "httpx[socks]"
-```
+pip3 install torch transformers
 
-首次运行会把两个模型分别下载到 HuggingFace 缓存目录（`~/.cache/huggingface`），之后离线推理。
-
-### 使用方式
-
-```bash
 # 只开中文 NER（推荐，补规则漏掉的中文人名/公司/地址）
 python3 cli.py anonymize input.docx -o output.docx --cn-llm
 
@@ -282,102 +216,73 @@ python3 cli.py anonymize input.docx -o output.docx --llm
 python3 cli.py anonymize input.docx -o output.docx --cn-llm --llm
 ```
 
-**Web UI 启用**：环境变量 `LEGAL_ANONYMIZER_CN_LLM=1` 和 `LEGAL_ANONYMIZER_LLM=1`：
+**三层仲裁机制：**
 
-```bash
-LEGAL_ANONYMIZER_CN_LLM=1 python3 web_app.py
-```
+1. 结构化数据（身份证/银行卡/邮箱等）一律由正则处理
+2. CN NER 可纠错规则层的边界错切和分类误判
+3. 同名全文一致性：CN NER 漏检的同名人名自动扩展到全文
+4. OpenAI 仅补空位：只覆盖前两层都没抓到的位置
+5. 英文段落不跑 CN NER，避免英文普通词误报
 
-### 实测收益
+### 三层检测实测收益
 
-**硬中文样本**（借款合同判决书，规则漏得很严重）：
+**硬中文样本**（借款合同判决书）：
 
 | 项 | 纯规则 | +CN NER |
 |---|---|---|
-| 中文人名漏检 | 10+ 处（含 6 种复姓示例：欧阳/万俟/诸葛/皇甫/司马/上官） | ✅ 全部抓到 |
-| 复姓识别 | 错切（如"司马XX"被切成"司"+"马XX"） | ✅ 正确合并 |
-| 错判纠正 | "某实业"被判人名 | ✅ 纠正为公司 |
-| 完整地址 | 只抓"128弄"和"56号楼"碎片 | ✅ 完整地址 |
-| "法院调取银行"误报 | 被当作银行名 | ✅ 已修 |
+| 中文人名漏检 | 10+ 处（含 6 种复姓） | 全部抓到 |
+| 复姓识别 | 错切（"司马XX"→"司"+"马XX"） | 正确合并 |
+| 完整地址 | 只抓地址碎片 | 完整地址 |
 
 **中英混合样本**（涉外民事起诉状）：
 
 | 项 | 纯规则 | +CN NER +OpenAI |
 |---|---|---|
-| 英文人名 | 漏 | ✅ John Smith / Jennifer Chen |
-| 英文地址 | 漏 | ✅ 2025 Mission Street, San Francisco, CA 94110, USA |
-| 英文公司 | 漏（含逗号时） | ✅ Acme Legal Services, Inc. |
-| 国际电话 | 漏 | ✅ +1 / +44 |
-| API token | 漏 | ✅ sk-proj-... |
+| 英文人名 | 漏 | John Smith / Jennifer Chen |
+| 英文地址 | 漏 | 2025 Mission Street, San Francisco |
+| 国际电话 | 漏 | +1 / +44 |
+| API token | 漏 | sk-proj-... |
 
-### 三层仲裁机制
+### 隐私安全
 
-1. **规则优先**：结构化数据（身份证/银行卡/邮箱等）一律由正则处理
-2. **CN NER 可纠错**：
-   - 规则把公司判成人名 → CN NER 纠正为公司
-   - 规则边界错切（复姓人名只识别后半段）→ CN NER 完整 span 胜出
-   - 规则只抓地址碎片 → CN NER 的完整地址胜出
-3. **同名全文一致性**：CN NER 对部分语境漏检同名人名时，系统自动扩展到全文所有位置
-4. **OpenAI 仅补空位**：只覆盖前两层都没抓到的位置，不与中文冲突
-5. **英文段落不跑 CN NER**：CJK 过滤避免把 "company"/"Delaware" 等英文普通词误报
+- 处理过程零网络请求——`grep -r "requests\|urllib\|http" *.py` 数据路径返回空
+- LLM 模型一次性下载到 `~/.cache/huggingface/`，之后全程离线推理
+- 彻底断网模式：`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python3 web_app.py`
 
-### 限制
+### 深入文档
 
-- OpenAI 模型英文优先，中文召回低，靠 CN NER 兜底
-- CN NER 训练于通用新闻语料，极少数生僻法律术语可能误报（如把"律师"当职位）
-- 全开后首次启动需加载两个模型（约 15-20 秒），之后单例复用
-
----
-
-## 🔒 隐私安全
-
-- 所有处理完全在本地进行，不调用任何外部 API
-- 不上传任何数据到云端
-- 代码完全开源可审计：`grep -r "requests|urllib|http" *.py` 应返回空结果
-- 启用 LLM 后模型一次性下载到本地（`~/.cache/huggingface/`），推理**全程离线**
-- 可设置 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=1` 彻底断网
-
----
-
-## 📚 深入文档
-
-- [`docs/项目报告.md`](docs/项目报告.md) —— 详细技术报告（2 万字，开发历程、架构、实测）
-- [`docs/简明版报告.md`](docs/简明版报告.md) —— 公众号友好版（5000 字，给同行/读者）
+- [`docs/项目报告.md`](docs/项目报告.md) —— 详细技术报告（架构、实测、开发历程）
+- [`docs/简明版报告.md`](docs/简明版报告.md) —— 公众号友好版，适合分享给同行
 - [`首次使用指南.pdf`](首次使用指南.pdf) —— 13 章节图文使用手册
-- [`DISCLAIMER.md`](DISCLAIMER.md) —— 免责声明（**使用前必读**）
+- [`DISCLAIMER.md`](DISCLAIMER.md) —— 免责声明（使用前必读）
 
----
+### 常见问题
 
-## ⚖️ 免责声明
+**`pip install` 报 `Permission denied`**  
+在命令前加 `--user`：`pip3 install --user -r requirements.txt`
 
-本工具是**辅助性脱敏工具**，**不能替代人工复核**。使用本工具脱敏的法律文书在交付前，**必须由使用者亲自复核确认**。开发者不对任何因使用本工具产生的信息泄露、合规问题或职业责任承担任何责任。
+**浏览器没有自动打开**  
+手动输入终端中显示的地址，通常是 `http://127.0.0.1:8080`
 
-完整免责条款见 [DISCLAIMER.md](DISCLAIMER.md)。
+**报错 `Address already in use`**  
+端口被占用，程序会自动尝试 8080-8099。仍失败则关掉占用端口的其他程序。
 
----
+**报错 `ModuleNotFoundError: No module named 'flask'`**  
+依赖未装成功，重新执行：`python3 -m pip install -r requirements.txt`
 
-## 🤝 贡献
+### 贡献
 
-欢迎 issue 和 PR：
-
-- 发现敏感信息漏检 → 提 issue 附带（脱敏过的）样例文本
+- 发现漏检 → 提 issue 附带（脱敏过的）样例文本
 - 发现误报 → 同上
-- 想加新检测类型 → 提 issue 讨论后再 PR
+- 想加新检测类型 → 先提 issue 讨论再 PR
 - 文档改进 → 直接 PR
 
----
+### 协议
 
-## 📜 协议
+Apache License 2.0 —— 见 [LICENSE](LICENSE)
 
-本项目采用 **Apache License 2.0** —— 见 [LICENSE](LICENSE)。
+### 致谢
 
-第三方依赖各自遵循其开源协议（OpenAI Privacy Filter / RapidOCR / PaddleOCR / PyMuPDF 等）。
-
----
-
-## 💝 致谢
-
-感谢以下开源项目让本工具成为可能：
 - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter)
 - [CLUENER 2020](https://huggingface.co/uer/roberta-base-finetuned-cluener2020-chinese)
 - [RapidOCR](https://github.com/RapidAI/RapidOCR)
