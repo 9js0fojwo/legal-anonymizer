@@ -74,6 +74,8 @@ Thumbs.db
 
 # Claude Code 本地配置（不应进开源仓库）
 .claude/
+CLAUDE.md
+SESSION_LOG.md
 
 # 启动脚本写的用户偏好（每个用户机器自己生成）
 .user_config

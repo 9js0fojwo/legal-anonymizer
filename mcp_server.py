@@ -11,7 +11,7 @@ Legal Document Anonymizer - MCP Server
   "mcpServers": {
     "legal-anonymizer": {
       "command": "python3",
-      "args": ["/Users/rainbow/AIwork/legal-anonymizer/mcp_server.py"]
+      "args": ["/path/to/legal-anonymizer/mcp_server.py"]
     }
   }
 }
