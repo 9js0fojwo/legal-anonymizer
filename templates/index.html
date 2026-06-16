@@ -321,6 +321,18 @@ body {
   background: var(--primary); color: white;
   border-radius: 10px;
 }
+.entity-group-header-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.entity-btn-del-all {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  font-size: 11px; padding: 2px 8px; cursor: pointer; color: var(--text-3);
+  transition: all 0.15s;
+}
+.entity-btn-del-all:hover {
+  border-color: var(--error); color: var(--error);
+  background: var(--error-light);
+}
 .entity-list {
   border: 1px solid var(--border);
   border-top: none;
@@ -1445,7 +1457,10 @@ function rebuildFindingsUI() {
     html += `<div class="entity-group">
       <div class="entity-group-header">
         <span>${escHtml(typeName)} (${type})</span>
-        <span class="entity-group-count">${items.length}</span>
+        <div class="entity-group-header-right">
+          <button class="entity-btn-del-all" onclick="deleteAllEntitiesOfType('${type}')" title="删除该分类全部识别字段">删除全部</button>
+          <span class="entity-group-count">${items.length}</span>
+        </div>
       </div>
       <div class="entity-list">`;
 
@@ -1558,6 +1573,21 @@ function deleteEntity(type, idx) {
     }
   }
   state.editableFindings[type].splice(idx, 1);
+  rebuildFindingsUI();
+}
+
+function deleteAllEntitiesOfType(type) {
+  const items = state.editableFindings[type] || [];
+  items.forEach(item => {
+    if (!state.excludedEntities.some(e => e.type === type && e.name === item.current)) {
+      state.excludedEntities.push({ type, name: item.current });
+    }
+    if (item.current !== item.original &&
+        !state.excludedEntities.some(e => e.type === type && e.name === item.original)) {
+      state.excludedEntities.push({ type, name: item.original });
+    }
+  });
+  state.editableFindings[type] = [];
   rebuildFindingsUI();
 }
 
