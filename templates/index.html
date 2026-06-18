@@ -940,12 +940,15 @@ body {
     <div class="card">
       <div class="card-title">手动划线脱敏</div>
       <p style="font-size:13px;color:var(--text-2);margin-bottom:10px;">
-        在下方原文中<strong>选中文字</strong>，自动<span style="color:#F53F3F;text-decoration:line-through;font-weight:bold;">标红划线</span>并加入脱敏。
+        在原文中<strong>选中文字</strong>预览<span style="color:#F53F3F;text-decoration:line-through;font-weight:bold;">标红划线</span>，点「确认添加」后加入脱敏字典。
       </p>
       <div id="manual-text-viewer" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:30px 40px;max-height:500px;overflow-y:auto;background:#fff;font-family:SimSun,宋体,serif;font-size:12pt;line-height:22pt;text-align:justify;color:#000;"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
         <span id="manual-text-status" style="font-size:12px;color:var(--text-3);"></span>
-        <button id="btn-undo-mark" class="btn btn-outline" onclick="undoLastMark()" style="font-size:12px;padding:4px 12px;display:none;">撤回上一次划线</button>
+        <div>
+          <button id="btn-confirm-mark" class="btn btn-primary" onclick="confirmLastMark()" style="font-size:12px;padding:4px 12px;display:none;">确认添加</button>
+          <button id="btn-undo-mark" class="btn btn-outline" onclick="undoLastMark()" style="font-size:12px;padding:4px 12px;display:none;">撤销</button>
+        </div>
       </div>
     </div>
 
@@ -1788,31 +1791,35 @@ function highlightAutoEntities(viewer) {
 
   for (var e = 0; e < entities.length; e++) {
     var ent = entities[e];
-    for (var n = 0; n < textNodes.length; n++) {
-      var node = textNodes[n];
-      if (node.parentNode.className === 'marked-redact') continue; // 跳过已手动标记
-      var idx = node.textContent.indexOf(ent.text);
-      if (idx < 0) continue;
-      // 找到匹配，包裹在 span 中
-      var before = node.textContent.substring(0, idx);
-      var after = node.textContent.substring(idx + ent.text.length);
-      var span = document.createElement('span');
-      span.style.background = '#FFF3CD';
-      span.style.borderBottom = '2px solid #FF7D00';
-      span.style.padding = '1px 0';
-      span.title = '已检测: ' + (state.typeNames[ent.type] || ent.type);
-      span.textContent = ent.text;
-      var parent = node.parentNode;
-      parent.insertBefore(document.createTextNode(before), node);
-      parent.insertBefore(span, node);
-      var afterNode = document.createTextNode(after);
-      parent.insertBefore(afterNode, node);
-      parent.removeChild(node);
-      // 更新 textNodes 列表
-      textNodes = [];
-      var w2 = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
-      while (w2.nextNode()) { textNodes.push(w2.currentNode); }
-      break; // 重新扫描当前实体
+    var found = true;
+    while (found) {
+      found = false;
+      for (var n = 0; n < textNodes.length; n++) {
+        var node = textNodes[n];
+        if (node.parentNode.className === 'marked-redact') continue;
+        if (node.parentNode.style && node.parentNode.style.background === 'rgb(255, 243, 205)') continue; // 已高亮
+        var idx = node.textContent.indexOf(ent.text);
+        if (idx < 0) continue;
+        found = true;
+        var before = node.textContent.substring(0, idx);
+        var after = node.textContent.substring(idx + ent.text.length);
+        var span = document.createElement('span');
+        span.style.background = '#FFF3CD';
+        span.style.borderBottom = '2px solid #FF7D00';
+        span.style.padding = '1px 0';
+        span.title = '已检测: ' + (state.typeNames[ent.type] || ent.type);
+        span.textContent = ent.text;
+        var parent = node.parentNode;
+        parent.insertBefore(document.createTextNode(before), node);
+        parent.insertBefore(span, node);
+        parent.insertBefore(document.createTextNode(after), node);
+        parent.removeChild(node);
+        // 重建 textNodes 继续搜索
+        textNodes = [];
+        var w2 = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+        while (w2.nextNode()) { textNodes.push(w2.currentNode); }
+        break; // 重新从 textNodes 开始找下一个出现
+      }
     }
   }
 }
@@ -1840,13 +1847,24 @@ function markSelection(viewer) {
   }
   sel.removeAllRanges();
 
-  // 记录最后标记的 span，用于撤回
+  // 记录最后标记的 span，用于撤回/确认
   lastMarkedSpan = span;
   lastMarkedText = text;
   document.getElementById('btn-undo-mark').style.display = '';
+  document.getElementById('btn-confirm-mark').style.display = '';
+  span.style.background = '#FFECE8';  // 浅红底 = 待确认
 
-  // 添加到脱敏实体
-  var entry = { type: 'other', name: text };
+  // 显示提示
+  var st = document.getElementById('manual-text-status');
+  if (st) st.textContent = '已选中「' + text + '」，请点「确认添加」加入词典';
+}
+
+function confirmLastMark() {
+  if (!lastMarkedSpan || !lastMarkedText) return;
+  var word = lastMarkedText;
+
+  // 加入词典（一次即可，脱敏引擎会自动处理全文）
+  var entry = { type: 'other', name: word };
   state.customEntities.push(entry);
   fetch('/api/entities', {
     method: 'POST',
@@ -1858,6 +1876,57 @@ function markSelection(viewer) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entries: [entry] }),
   }).then(function(){ loadUserDict(); });
+
+  // 全文所有出现位置都标红划线
+  var viewer = document.getElementById('manual-text-viewer');
+  var count = markAllOccurrences(viewer, word);
+  // 隐藏按钮
+  document.getElementById('btn-confirm-mark').style.display = 'none';
+  document.getElementById('btn-undo-mark').style.display = 'none';
+  var st = document.getElementById('manual-text-status');
+  if (st) st.textContent = '已添加「' + word + '」到脱敏词典，全文 ' + count + ' 处已标红';
+  lastMarkedSpan = null;
+  lastMarkedText = '';
+}
+
+function markAllOccurrences(viewer, word) {
+  if (!viewer || !word || word.length < 2) return 0;
+  var count = 0;
+  var walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [];
+  while (walker.nextNode()) { nodes.push(walker.currentNode); }
+  for (var n = 0; n < nodes.length; n++) {
+    var node = nodes[n];
+    // 跳过已标记/高亮节点内的文本
+    var p = node.parentNode;
+    if (p.className === 'marked-redact') continue;
+    if (p.style && p.style.background === 'rgb(255, 204, 199)') continue; // 已确认红色
+    if (p.style && p.style.background === 'rgb(255, 236, 232)') continue; // 待确认浅红
+    var idx = node.textContent.indexOf(word);
+    if (idx < 0) continue;
+    var before = node.textContent.substring(0, idx);
+    var after = node.textContent.substring(idx + word.length);
+    var span = document.createElement('span');
+    span.style.color = '#F53F3F';
+    span.style.textDecoration = 'line-through';
+    span.style.fontWeight = 'bold';
+    span.style.background = '#FFCCC7';
+    span.title = '手动脱敏';
+    span.className = 'marked-redact';
+    span.textContent = word;
+    var parent = node.parentNode;
+    parent.insertBefore(document.createTextNode(before), node);
+    parent.insertBefore(span, node);
+    parent.insertBefore(document.createTextNode(after), node);
+    parent.removeChild(node);
+    count++;
+    // 重建节点列表
+    walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+    nodes = [];
+    while (walker.nextNode()) { nodes.push(walker.currentNode); }
+    n = -1; // 从头重新扫描
+  }
+  return count;
 }
 
 function undoLastMark() {
@@ -1867,7 +1936,6 @@ function undoLastMark() {
   if (parent) {
     var textNode = document.createTextNode(lastMarkedText);
     parent.replaceChild(textNode, lastMarkedSpan);
-    // 标准化相邻文本节点
     parent.normalize();
   }
   // 从 customEntities 中移除
@@ -1884,6 +1952,7 @@ function undoLastMark() {
   lastMarkedSpan = null;
   lastMarkedText = '';
   document.getElementById('btn-undo-mark').style.display = 'none';
+  document.getElementById('btn-confirm-mark').style.display = 'none';
 }
 
 // ==================== Anonymize ====================
