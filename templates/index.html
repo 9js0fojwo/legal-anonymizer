@@ -1728,12 +1728,20 @@ async function loadManualTextViewer() {
       viewer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-3);">' + escHtml(data.error) + '</div>';
       return;
     }
-    var text = data.text;
-    var paras = text.split('\n\n');
     var html = '';
-    for (var k = 0; k < paras.length; k++) {
-      if (paras[k].trim()) {
-        html += '<p style="margin:0 0 8pt;text-indent:2em;text-align:justify;">' + escHtml(paras[k].trim()) + '</p>';
+    if (data.html) {
+      // 后端已返回 HTML，直接使用（已过滤页码）
+      html = data.html;
+    } else {
+      // 回退：纯文本分行
+      var text = data.text || '';
+      var lines = text.split('\n');
+      for (var k = 0; k < lines.length; k++) {
+        if (lines[k] === '') {
+          html += '<br>';
+        } else {
+          html += '<div style="text-indent:2em;text-align:justify;">' + escHtml(lines[k]) + '</div>';
+        }
       }
     }
     viewer.innerHTML = html;
@@ -1742,7 +1750,7 @@ async function loadManualTextViewer() {
     lastMarkedSpan = null;
     lastMarkedText = '';
     document.getElementById('btn-undo-mark').style.display = 'none';
-    status.textContent = '黄底=已检测 | 选中文字自动标红划线 | 共 ' + (data.paragraphs || '?') + ' 段';
+    status.textContent = '黄底=已检测 | 选中文字自动标红划线 | 共 ' + data.length + ' 字';
 
     viewer.addEventListener('mouseup', function() {
       setTimeout(function() { markSelection(viewer); }, 10);

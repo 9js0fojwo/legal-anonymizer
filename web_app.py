@@ -76,6 +76,83 @@ def save_user_dict(entries: list):
     with open(USER_DICT_PATH, 'w', encoding='utf-8') as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 
+
+def _file_to_simple_html(file_path: str, suffix: str) -> str:
+    """将文档转为简化 HTML，保留段落结构"""
+    import re
+
+    if suffix == '.docx':
+        try:
+            from docx import Document
+            doc = Document(file_path)
+            parts = []
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if not text:
+                    parts.append('<br>')
+                    continue
+                # 跳过页码
+                if re.fullmatch(r'\d{1,4}', text):
+                    continue
+                # 粗体标题
+                bold = any(run.bold for run in para.runs if run.bold)
+                align = para.alignment
+                align_style = ''
+                if align is not None:
+                    if align == 1:  # CENTER
+                        align_style = 'text-align:center;'
+                    elif align == 3:  # RIGHT
+                        align_style = 'text-align:right;'
+                tag = 'strong' if bold else 'span'
+                parts.append(
+                    f'<div style="{align_style}text-indent:2em;margin:2px 0;">'
+                    f'<{tag}>{text}</{tag}></div>'
+                )
+            return '\n'.join(parts) if parts else None
+        except Exception:
+            return None
+
+    if suffix == '.pdf':
+        try:
+            import fitz
+            doc = fitz.open(file_path)
+            parts = []
+            for page in doc:
+                blocks = page.get_text('blocks')
+                for block in blocks:
+                    # block = (x0,y0,x1,y1, text, block_no, block_type)
+                    text = block[4].strip() if len(block) > 4 else ''
+                    if not text:
+                        continue
+                    if re.fullmatch(r'\d{1,4}', text):
+                        continue
+                    text = text.replace('\n', ' ')
+                    parts.append(
+                        f'<div style="text-indent:2em;margin:2px 0;">{text}</div>'
+                    )
+            doc.close()
+            return '\n'.join(parts) if parts else None
+        except Exception:
+            return None
+
+    if suffix in ('.txt', '.md'):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            lines = text.split('\n')
+            parts = []
+            for line in lines:
+                s = line.strip()
+                if not s:
+                    parts.append('<br>')
+                else:
+                    parts.append(f'<div style="text-indent:2em;margin:2px 0;">{s}</div>')
+            return '\n'.join(parts)
+        except Exception:
+            return None
+
+    return None
+
 # 支持的文件格式
 SUPPORTED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.txt', '.md', '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif', '.webp'}
 
@@ -382,49 +459,44 @@ def analyze_document():
 
 @app.route('/api/text/<session_id>', methods=['GET'])
 def get_session_text(session_id):
-    """获取会话的原始文本（用于手动划线脱敏），已智能分段"""
+    """获取会话的原始文本（用于手动划线脱敏），尽可能保留原文格式"""
     session = sessions.get(session_id)
     if not session:
         return jsonify({'error': '会话不存在或已过期'}), 404
+
+    file_path = session.get('file_path', '')
+    suffix = Path(file_path).suffix.lower() if file_path else ''
+
+    # 尝试输出简化 HTML，保留段落结构
+    try:
+        html = _file_to_simple_html(file_path, suffix)
+        if html:
+            # 同时保留纯文本供后端使用
+            text = session.get('text', '')
+            if not text:
+                from processors.file_processor import FileProcessor
+                fp = FileProcessor()
+                text = fp.extract_text(file_path)
+            return jsonify({'html': html, 'text': text, 'length': len(text)})
+    except Exception:
+        pass
+
+    # 回退：纯文本
     text = session.get('text', '')
     if not text:
         return jsonify({'error': '文本尚未提取，请先分析文档'}), 400
-
-    # ---- 智能分段处理 ----
     import re
-    # 去页码
-    text = re.sub(r'[第共]\s*\d+\s*页', '', text)
-    text = re.sub(r'\d+\s*/\s*\d+', '', text)
-    # 按行拆分
     lines = text.split('\n')
-    paras = []
-    cur = ''
-    SENTENCE_END = re.compile(r'[。！？」』”）\)]$')
+    cleaned = []
     for line in lines:
-        ln = line.strip()
-        if not ln:
-            if cur:
-                paras.append(cur)
-                cur = ''
+        s = line.strip()
+        if re.fullmatch(r'\d{1,4}', s):
             continue
-        # 跳过纯页码
-        if re.fullmatch(r'\d{1,3}', ln):
+        if re.fullmatch(r'第?\s*\d+\s*页?\s*/\s*共?\s*\d+\s*页?', s):
             continue
-        if re.fullmatch(r'[-\s]*\d+[-\s]*', ln):
-            continue
-        if cur:
-            if SENTENCE_END.search(cur):
-                paras.append(cur)
-                cur = ln
-            else:
-                cur += ln
-        else:
-            cur = ln
-    if cur:
-        paras.append(cur)
-
-    formatted = '\n\n'.join(paras)
-    return jsonify({'text': formatted, 'length': len(formatted), 'paragraphs': len(paras)})
+        cleaned.append(line)
+    text = '\n'.join(cleaned)
+    return jsonify({'text': text, 'length': len(text)})
 
 
 @app.route('/api/analyze/status/<session_id>', methods=['GET'])
