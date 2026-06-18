@@ -316,7 +316,7 @@ def on_page(canvas, doc):
     canvas.setFont('PingFang', 8)
     canvas.setFillColor(TEXT_GRAY)
     canvas.drawCentredString(A4[0] / 2, 12 * mm, f'- {doc.page} -')
-    canvas.drawString(15 * mm, 12 * mm, '法律文档脱敏工具 by 黄灵宝同学')
+    canvas.drawString(15 * mm, 12 * mm, '法律文档脱敏工具 环德律所')
     canvas.restoreState()
 
 
@@ -355,7 +355,7 @@ def build_content(styles):
     ))
     story.append(Spacer(1, 8 * mm))
     story.append(Paragraph(
-        'by <b>黄灵宝同学</b>',
+        'by <b>环德律所</b>',
         ParagraphStyle('Author', fontName='PingFang', fontSize=12,
                        textColor=ACCENT, alignment=TA_CENTER, leading=16)
     ))
@@ -958,7 +958,7 @@ def build_content(styles):
     ))
     story.append(Spacer(1, 5 * mm))
     story.append(Paragraph(
-        'Made with love by <b>黄灵宝同学</b>',
+        'Made with love by <b>环德律所</b>',
         ParagraphStyle('Brand', fontName='PingFang', fontSize=10,
                        textColor=ACCENT, alignment=TA_CENTER, leading=14)
     ))

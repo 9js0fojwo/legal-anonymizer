@@ -152,7 +152,7 @@ def print_supported_types(anonymizer: LegalAnonymizer):
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
-        description='法律文档脱敏工具 (by 黄灵宝同学) - 数据完全本地处理，保障隐私安全',
+        description='法律文档脱敏工具 (环德律所) - 数据完全本地处理，保障隐私安全',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:

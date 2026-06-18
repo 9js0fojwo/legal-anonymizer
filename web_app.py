@@ -47,6 +47,7 @@ def is_scanned_pdf(file_path: str) -> bool:
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # 目录配置
 BASE_DIR = Path(__file__).parent
@@ -304,18 +305,23 @@ def _run_single_analyze(session_id: str, use_ocr: bool, ocr_engine: str,
         all_entities = anonymizer._detect_all(text)
         session['auto_entities'] = all_entities
 
-        # 整理 findings
-        CONTEXT_WINDOW = 40
+        # 整理 findings — 前后各 100 字上下文
+        CONTEXT_WINDOW = 100
         findings, seen = {}, {}
         for entity_text, entity_type, pos in all_entities:
             key = (entity_text, entity_type)
             if key not in seen:
-                start = max(0, pos - CONTEXT_WINDOW)
-                end = min(len(text), pos + len(entity_text) + CONTEXT_WINDOW)
-                seen[key] = text[start:end].replace('\n', ' ').strip()
+                before = text[max(0, pos - CONTEXT_WINDOW):pos].replace('\n', ' ')
+                after = text[pos + len(entity_text):pos + len(entity_text) + CONTEXT_WINDOW].replace('\n', ' ')
+                seen[key] = (before.strip(), after.strip())
             findings.setdefault(entity_type, [])
             if not any(it['text'] == entity_text for it in findings[entity_type]):
-                findings[entity_type].append({'text': entity_text, 'context': seen[key]})
+                findings[entity_type].append({
+                    'text': entity_text,
+                    'context_before': seen[key][0],
+                    'context_after': seen[key][1],
+                    'context': seen[key][0] + '【' + entity_text + '】' + seen[key][1],
+                })
         session['findings'] = findings
 
         type_names = anonymizer.pattern_detector.type_names.copy()
@@ -372,6 +378,53 @@ def analyze_document():
         daemon=True,
     ).start()
     return jsonify({'status': 'started', 'session_id': session_id})
+
+
+@app.route('/api/text/<session_id>', methods=['GET'])
+def get_session_text(session_id):
+    """获取会话的原始文本（用于手动划线脱敏），已智能分段"""
+    session = sessions.get(session_id)
+    if not session:
+        return jsonify({'error': '会话不存在或已过期'}), 404
+    text = session.get('text', '')
+    if not text:
+        return jsonify({'error': '文本尚未提取，请先分析文档'}), 400
+
+    # ---- 智能分段处理 ----
+    import re
+    # 去页码
+    text = re.sub(r'[第共]\s*\d+\s*页', '', text)
+    text = re.sub(r'\d+\s*/\s*\d+', '', text)
+    # 按行拆分
+    lines = text.split('\n')
+    paras = []
+    cur = ''
+    SENTENCE_END = re.compile(r'[。！？」』”）\)]$')
+    for line in lines:
+        ln = line.strip()
+        if not ln:
+            if cur:
+                paras.append(cur)
+                cur = ''
+            continue
+        # 跳过纯页码
+        if re.fullmatch(r'\d{1,3}', ln):
+            continue
+        if re.fullmatch(r'[-\s]*\d+[-\s]*', ln):
+            continue
+        if cur:
+            if SENTENCE_END.search(cur):
+                paras.append(cur)
+                cur = ln
+            else:
+                cur += ln
+        else:
+            cur = ln
+    if cur:
+        paras.append(cur)
+
+    formatted = '\n\n'.join(paras)
+    return jsonify({'text': formatted, 'length': len(formatted), 'paragraphs': len(paras)})
 
 
 @app.route('/api/analyze/status/<session_id>', methods=['GET'])
@@ -780,9 +833,30 @@ def download_mapping(session_id):
 
 @app.route('/api/user-dict', methods=['GET'])
 def get_user_dict():
-    """获取用户词典"""
+    """获取用户词典 + 内置检测规则摘要"""
     entries = load_user_dict()
-    return jsonify({'entries': entries, 'count': len(entries)})
+
+    # 内置规则摘要
+    from detectors.entity_detector import COMMON_SURNAMES, COMPOUND_SURNAMES, ORG_SUFFIXES
+    from detectors.pattern_detector import PatternDetector
+    pd = PatternDetector()
+    pattern_types = pd.get_all_types()
+
+    builtin = [
+        {'type': 'person', 'name': f'姓氏检测（{len(COMMON_SURNAMES)} 个姓氏 + {len(COMPOUND_SURNAMES)} 个复姓）', 'builtin': True},
+        {'type': 'person', 'name': '法律称谓+姓名（2~3字，排除金额）', 'builtin': True},
+        {'type': 'company', 'name': f'公司全称检测（{len(ORG_SUFFIXES)} 种后缀）', 'builtin': True},
+        {'type': 'company', 'name': '简称公司名 + 国际公司后缀', 'builtin': True},
+        {'type': 'law_firm', 'name': '律师事务所自动检测', 'builtin': True},
+        {'type': 'court', 'name': '法院/仲裁委自动检测', 'builtin': True},
+        {'type': 'government', 'name': '政府机关自动检测', 'builtin': True},
+        {'type': 'institution', 'name': '机构自动检测（大学/医院等）', 'builtin': True},
+        {'type': 'bank_name', 'name': '银行自动检测', 'builtin': True},
+    ]
+    for ptype, pname in pattern_types.items():
+        builtin.append({'type': ptype, 'name': pname, 'builtin': True})
+
+    return jsonify({'entries': entries, 'count': len(entries), 'builtin_rules': builtin})
 
 
 @app.route('/api/user-dict/add', methods=['POST'])

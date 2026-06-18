@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>法律文档脱敏工具 - 黄灵宝同学出品</title>
+<title>法律文档脱敏工具 - 环德律所出品</title>
 <style>
 :root {
   --primary: #165DFF;
@@ -356,9 +356,20 @@ body {
   font-size: 12px; word-break: break-all;
 }
 .entity-context {
-  margin-top: 3px; font-size: 11px; color: var(--text-3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-style: italic; max-width: 420px;
+  margin-top: 6px; font-size: 12px; color: var(--text-2);
+  line-height: 1.8; word-break: break-all;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  white-space: normal;
+}
+.entity-highlight {
+  color: #F53F3F;
+  font-weight: 700;
+  background: #FFECE8;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 .entity-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .entity-btn {
@@ -559,7 +570,7 @@ body {
     <div class="header-icon">&#128274;</div>
     <div>
       <h1>法律文档脱敏工具</h1>
-      <div style="font-size:11px;opacity:0.7;margin-top:2px;">by 黄灵宝同学</div>
+      <div style="font-size:11px;opacity:0.7;margin-top:2px;">环德律所</div>
     </div>
   </div>
   <div class="header-badge">&#128737; 数据完全本地处理</div>
@@ -881,7 +892,11 @@ body {
           </div>
         </div>
       </div>
-    </div>
+    
+
+
+
+</div>
   </div>
 
   <!-- Step 2: Review -->
@@ -893,9 +908,9 @@ body {
     </div>
 
     <div class="card">
-      <div class="card-title">手动添加实体</div>
+      <div class="card-title">脱敏字典 <span id="dict-count-badge" style="font-size:12px;color:var(--text-3);font-weight:400;"></span></div>
       <p style="font-size:13px;color:var(--text-2);margin-bottom:12px;">
-        如果有自动检测未覆盖的人名、公司名等，可以在此手动添加：
+        字典中的词语在每次处理文件时<strong>自动作为脱敏目标</strong>，无需重复添加。
       </p>
       <div class="add-entity-form">
         <select id="add-type">
@@ -908,12 +923,30 @@ body {
           <option value="bank_name">银行</option>
           <option value="government">政府机关</option>
           <option value="institution">机构</option>
+          <option value="product_name">产品名称</option>
+          <option value="brand_name">品牌名称</option>
+          <option value="device_name">设备名称</option>
+          <option value="model_number">型号</option>
           <option value="other">其他</option>
         </select>
-        <input type="text" id="add-name" placeholder="输入实体名称，如：张三" onkeydown="if(event.key==='Enter')addEntity()">
-        <button class="btn btn-primary" onclick="addEntity()" style="padding:8px 14px;">添加</button>
+        <input type="text" id="add-name" placeholder="输入脱敏词语" onkeydown="if(event.key==='Enter')addDictWord()">
+        <button class="btn btn-primary" onclick="addDictWord()" style="padding:8px 14px;">添加</button>
       </div>
-      <div class="custom-entity-list" id="custom-entities"></div>
+      <div id="dict-entries-list" style="border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:10px;min-height:40px;">
+        <div style="text-align:center;padding:16px;color:var(--text-3);font-size:13px;">加载中...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">手动划线脱敏</div>
+      <p style="font-size:13px;color:var(--text-2);margin-bottom:10px;">
+        在下方原文中<strong>选中文字</strong>，自动<span style="color:#F53F3F;text-decoration:line-through;font-weight:bold;">标红划线</span>并加入脱敏。
+      </p>
+      <div id="manual-text-viewer" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:30px 40px;max-height:500px;overflow-y:auto;background:#fff;font-family:SimSun,宋体,serif;font-size:12pt;line-height:22pt;text-align:justify;color:#000;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span id="manual-text-status" style="font-size:12px;color:var(--text-3);"></span>
+        <button id="btn-undo-mark" class="btn btn-outline" onclick="undoLastMark()" style="font-size:12px;padding:4px 12px;display:none;">撤回上一次划线</button>
+      </div>
     </div>
 
     <div class="card">
@@ -1067,25 +1100,6 @@ body {
       </div>
     </div>
 
-    <!-- 词典管理卡片 -->
-    <div class="card" id="dict-mgr-card">
-      <div class="card-title section-toggle" onclick="toggleDictManager()" id="dict-mgr-toggle">
-        <span>&#128218; 个人词典</span>
-        <span id="dict-count-badge" style="margin-left:auto;font-size:12px;color:var(--text-3);font-weight:400;"></span>
-        <span class="arrow" style="margin-left:8px;color:var(--text-3);">&#9654;</span>
-      </div>
-      <div id="dict-mgr-content" class="hidden">
-        <p style="font-size:13px;color:var(--text-2);margin-bottom:12px;">
-          词典中的词条在每次处理文件时自动作为检测目标，无需重复手动添加。
-        </p>
-        <div id="dict-entries-list" style="border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:12px;min-height:40px;">
-          <div style="text-align:center;padding:16px;color:var(--text-3);font-size:13px;">加载中...</div>
-        </div>
-        <button onclick="clearUserDict()" class="btn btn-outline" style="color:var(--error);border-color:var(--error);font-size:13px;">
-          &#128465; 清空词典
-        </button>
-      </div>
-    </div>
   </div>
   </div><!-- /single-mode-panel -->
 </div>
@@ -1118,7 +1132,7 @@ function goToStep(n) {
   for (let i = 1; i <= 2; i++) {
     document.getElementById('step-div-' + i).className = 'step-divider' + (i < n ? ' done' : '');
   }
-  if (n === 3) loadUserDict();
+  if (n === 2) { loadUserDict(); loadManualTextViewer(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1467,8 +1481,13 @@ function rebuildFindingsUI() {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const id = `chk_${type}_${i}`;
-      const ctxHtml = item.context
-        ? `<div class="entity-context">…${escHtml(item.context)}…</div>` : '';
+      let ctxHtml = '';
+      if (item.context) {
+        // 将 【实体】 替换为红色高亮
+        let ctx = escHtml(item.context);
+        ctx = ctx.replace(/【([^】]+)】/g, '<span class="entity-highlight">$1</span>');
+        ctxHtml = '<div class="entity-context">…' + ctx + '…</div>';
+      }
       html += `<div class="entity-item" id="ei_${type}_${i}">
         <input type="checkbox" id="${id}" ${item.enabled ? 'checked' : ''} onchange="toggleEntityV2('${type}',${i},this.checked)">
         <div class="entity-main">
@@ -1553,7 +1572,6 @@ function saveEntity(type, idx) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: state.sessionId, action: 'add', entities: [{ type, name: newVal }] }),
       });
-      renderCustomEntities();
     }
   }
 
@@ -1591,58 +1609,273 @@ function deleteAllEntitiesOfType(type) {
   rebuildFindingsUI();
 }
 
-// ==================== Custom Entities ====================
-async function addEntity() {
+// ==================== 脱敏字典 ====================
+let userDictEntries = [];
+let builtinRules = [];
+
+async function loadUserDict() {
+  try {
+    const res = await fetch('/api/user-dict');
+    const data = await res.json();
+    userDictEntries = data.entries || [];
+    builtinRules = data.builtin_rules || [];
+    renderDictEntries();
+    const badge = document.getElementById('dict-count-badge');
+    if (badge) {
+      const total = userDictEntries.length + builtinRules.length;
+      badge.textContent = '（' + builtinRules.length + ' 条规则 + ' + userDictEntries.length + ' 个自定义词）';
+    }
+  } catch (e) { console.error(e); }
+}
+
+function renderDictEntries() {
+  const el = document.getElementById('dict-entries-list');
+  if (!el) return;
+  let html = '';
+
+  // 内置规则 — 可折叠，默认收起
+  if (builtinRules.length > 0) {
+    const groups = {};
+    for (const r of builtinRules) {
+      const tn = state.typeNames[r.type] || r.type;
+      if (!groups[tn]) groups[tn] = [];
+      groups[tn].push(r.name);
+    }
+    const gkeys = Object.keys(groups);
+    // 折叠的规则内容
+    let rulesHtml = '';
+    for (let i = 0; i < gkeys.length; i++) {
+      const tn = gkeys[i];
+      const names = groups[tn];
+      rulesHtml += '<span class="dict-type-badge" style="margin-right:4px;">' + escHtml(tn) + '</span>';
+      rulesHtml += '<span style="color:var(--text-2);">' + names.map(function(n){return escHtml(n);}).join('、') + '</span>';
+      if (i < gkeys.length - 1) rulesHtml += '<br>';
+    }
+    html += '<div style="cursor:pointer;font-size:12px;color:var(--text-3);padding:6px 12px;" onclick="var n=this.nextElementSibling;n.style.display=n.style.display==\'none\'?\'\':\'none\';">'
+      + '&#9654; 内置检测规则（' + builtinRules.length + ' 条）</div>';
+    html += '<div style="display:none;padding:4px 12px 8px;font-size:12px;line-height:1.8;">' + rulesHtml + '</div>';
+  }
+
+  // 自定义词条
+  html += '<div style="padding:6px 12px;line-height:2.2;font-size:13px;">';
+  html += '<strong style="font-size:12px;color:var(--text-3);">自定义词语：</strong> ';
+  if (userDictEntries.length === 0) {
+    html += '<span style="color:var(--text-3);">暂无</span>';
+  } else {
+    for (let i = 0; i < userDictEntries.length; i++) {
+      var e = userDictEntries[i];
+      html += '<span class="custom-tag" style="margin:2px 4px;display:inline-block;">'
+        + escHtml(e.name)
+        + ' <button onclick="removeDictEntry(' + i + ')" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:14px;padding:0 2px;" title="删除">&times;</button>'
+        + '</span>';
+    }
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+async function addDictWord() {
   const type = document.getElementById('add-type').value;
   const name = document.getElementById('add-name').value.trim();
   if (!name) return;
-
-  const entity = { type, name };
-  state.customEntities.push(entity);
-
-  // 通知后端
+  const entry = { type, name };
+  state.customEntities.push(entry);
   await fetch('/api/entities', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_id: state.sessionId,
-      action: 'add',
-      entities: [entity],
-    }),
+    body: JSON.stringify({ session_id: state.sessionId, action: 'add', entities: [entry] }),
   });
-
+  await fetch('/api/user-dict/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries: [entry] }),
+  });
   document.getElementById('add-name').value = '';
-  renderCustomEntities();
+  loadUserDict();
 }
 
-async function removeEntity(idx) {
-  const entity = state.customEntities[idx];
-  state.customEntities.splice(idx, 1);
-
-  await fetch('/api/entities', {
+async function removeDictEntry(idx) {
+  const entry = userDictEntries[idx];
+  await fetch('/api/user-dict/remove', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_id: state.sessionId,
-      action: 'remove',
-      entities: [entity],
-    }),
+    body: JSON.stringify({ entries: [entry] }),
   });
-
-  renderCustomEntities();
+  loadUserDict();
 }
 
-function renderCustomEntities() {
-  const el = document.getElementById('custom-entities');
-  if (state.customEntities.length === 0) {
-    el.innerHTML = '';
+async function clearUserDict() {
+  if (!confirm('确定清空全部词典词条？')) return;
+  await fetch('/api/user-dict/clear', { method: 'POST' });
+  loadUserDict();
+}
+
+// ==================== 手动划线脱敏 ====================
+var lastMarkedSpan = null;
+var lastMarkedText = '';
+
+async function loadManualTextViewer() {
+  if (!state.sessionId) return;
+  const viewer = document.getElementById('manual-text-viewer');
+  const status = document.getElementById('manual-text-status');
+  if (!viewer) return;
+
+  try {
+    const res = await fetch('/api/text/' + state.sessionId);
+    const data = await res.json();
+    if (data.error) {
+      viewer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-3);">' + escHtml(data.error) + '</div>';
+      return;
+    }
+    var text = data.text;
+    var paras = text.split('\n\n');
+    var html = '';
+    for (var k = 0; k < paras.length; k++) {
+      if (paras[k].trim()) {
+        html += '<p style="margin:0 0 8pt;text-indent:2em;text-align:justify;">' + escHtml(paras[k].trim()) + '</p>';
+      }
+    }
+    viewer.innerHTML = html;
+    // 高亮已自动检测到的实体（黄底+下划线，与手动标红划线区分）
+    highlightAutoEntities(viewer);
+    lastMarkedSpan = null;
+    lastMarkedText = '';
+    document.getElementById('btn-undo-mark').style.display = 'none';
+    status.textContent = '黄底=已检测 | 选中文字自动标红划线 | 共 ' + (data.paragraphs || '?') + ' 段';
+
+    viewer.addEventListener('mouseup', function() {
+      setTimeout(function() { markSelection(viewer); }, 10);
+    });
+  } catch (e) {
+    viewer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--error);">加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function highlightAutoEntities(viewer) {
+  // 收集所有已启用的自动检测实体
+  var entities = [];
+  for (var type in state.editableFindings) {
+    var items = state.editableFindings[type];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].enabled !== false) {
+        entities.push({ text: items[i].current || items[i].original, type: type });
+      }
+    }
+  }
+  // 按长度降序（避免短词先匹配破坏长词）
+  entities.sort(function(a, b) { return b.text.length - a.text.length; });
+  // 去重
+  var seen = {};
+  entities = entities.filter(function(e) {
+    if (seen[e.text]) return false;
+    seen[e.text] = true;
+    return e.text.length >= 2;
+  });
+
+  // 在 viewer 的文本节点中高亮实体
+  var walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+  var textNodes = [];
+  while (walker.nextNode()) { textNodes.push(walker.currentNode); }
+
+  for (var e = 0; e < entities.length; e++) {
+    var ent = entities[e];
+    for (var n = 0; n < textNodes.length; n++) {
+      var node = textNodes[n];
+      if (node.parentNode.className === 'marked-redact') continue; // 跳过已手动标记
+      var idx = node.textContent.indexOf(ent.text);
+      if (idx < 0) continue;
+      // 找到匹配，包裹在 span 中
+      var before = node.textContent.substring(0, idx);
+      var after = node.textContent.substring(idx + ent.text.length);
+      var span = document.createElement('span');
+      span.style.background = '#FFF3CD';
+      span.style.borderBottom = '2px solid #FF7D00';
+      span.style.padding = '1px 0';
+      span.title = '已检测: ' + (state.typeNames[ent.type] || ent.type);
+      span.textContent = ent.text;
+      var parent = node.parentNode;
+      parent.insertBefore(document.createTextNode(before), node);
+      parent.insertBefore(span, node);
+      var afterNode = document.createTextNode(after);
+      parent.insertBefore(afterNode, node);
+      parent.removeChild(node);
+      // 更新 textNodes 列表
+      textNodes = [];
+      var w2 = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+      while (w2.nextNode()) { textNodes.push(w2.currentNode); }
+      break; // 重新扫描当前实体
+    }
+  }
+}
+
+function markSelection(viewer) {
+  var sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  var text = sel.toString().trim();
+  if (!text || text.length < 2) return;
+
+  var container = sel.getRangeAt(0).commonAncestorContainer;
+  if (!viewer.contains(container)) return;
+
+  var range = sel.getRangeAt(0);
+  var span = document.createElement('span');
+  span.style.color = '#F53F3F';
+  span.style.textDecoration = 'line-through';
+  span.style.fontWeight = 'bold';
+  span.title = '已标记脱敏';
+  span.className = 'marked-redact';
+  try {
+    range.surroundContents(span);
+  } catch(e) {
     return;
   }
-  el.innerHTML = state.customEntities.map((e, i) => {
-    const typeName = state.typeNames[e.type] || e.type;
-    return `<span class="custom-tag">${escHtml(typeName)}: ${escHtml(e.name)}
-      <button onclick="removeEntity(${i})">\u00d7</button></span>`;
-  }).join('');
+  sel.removeAllRanges();
+
+  // 记录最后标记的 span，用于撤回
+  lastMarkedSpan = span;
+  lastMarkedText = text;
+  document.getElementById('btn-undo-mark').style.display = '';
+
+  // 添加到脱敏实体
+  var entry = { type: 'other', name: text };
+  state.customEntities.push(entry);
+  fetch('/api/entities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: state.sessionId, action: 'add', entities: [entry] }),
+  });
+  fetch('/api/user-dict/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries: [entry] }),
+  }).then(function(){ loadUserDict(); });
+}
+
+function undoLastMark() {
+  if (!lastMarkedSpan || !lastMarkedText) return;
+  // 把 span 还原为纯文本
+  var parent = lastMarkedSpan.parentNode;
+  if (parent) {
+    var textNode = document.createTextNode(lastMarkedText);
+    parent.replaceChild(textNode, lastMarkedSpan);
+    // 标准化相邻文本节点
+    parent.normalize();
+  }
+  // 从 customEntities 中移除
+  state.customEntities = state.customEntities.filter(function(e) {
+    return e.name !== lastMarkedText;
+  });
+  // 从词典移除
+  fetch('/api/user-dict/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries: [{ type: 'other', name: lastMarkedText }] }),
+  }).then(function(){ loadUserDict(); });
+
+  lastMarkedSpan = null;
+  lastMarkedText = '';
+  document.getElementById('btn-undo-mark').style.display = 'none';
 }
 
 // ==================== Anonymize ====================
@@ -1859,68 +2092,7 @@ async function executeReAnonymize() {
   }
 }
 
-// ==================== User Dict ====================
-let userDictEntries = [];
-
-async function loadUserDict() {
-  try {
-    const res = await fetch('/api/user-dict');
-    const data = await res.json();
-    userDictEntries = data.entries || [];
-    const badge = document.getElementById('dict-count-badge');
-    if (badge) {
-      badge.textContent = userDictEntries.length > 0
-        ? `（${userDictEntries.length} 个词条）`
-        : '（空）';
-    }
-    renderDictEntries();
-  } catch (e) { console.error('加载词典失败', e); }
-}
-
-function toggleDictManager() {
-  const content = document.getElementById('dict-mgr-content');
-  const toggle = document.getElementById('dict-mgr-toggle');
-  content.classList.toggle('hidden');
-  toggle.classList.toggle('open');
-  if (!content.classList.contains('hidden')) loadUserDict();
-}
-
-function renderDictEntries() {
-  const el = document.getElementById('dict-entries-list');
-  if (!el) return;
-  if (userDictEntries.length === 0) {
-    el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-3);font-size:13px;">词典为空</div>';
-    return;
-  }
-  el.innerHTML = userDictEntries.map((e, i) => {
-    const typeName = state.typeNames[e.type] || e.type;
-    return `<div class="dict-entry">
-      <div class="dict-entry-left">
-        <span class="dict-type-badge">${escHtml(typeName)}</span>
-        <span>${escHtml(e.name)}</span>
-      </div>
-      <button class="dict-remove-btn" onclick="removeDictEntry(${i})" title="删除">&times;</button>
-    </div>`;
-  }).join('');
-}
-
-async function removeDictEntry(idx) {
-  const entry = userDictEntries[idx];
-  await fetch('/api/user-dict/remove', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entries: [entry] }),
-  });
-  loadUserDict();
-}
-
-async function clearUserDict() {
-  if (!confirm('确定清空全部词典词条？')) return;
-  await fetch('/api/user-dict/clear', { method: 'POST' });
-  loadUserDict();
-}
-
-// ==================== Start Over ====================
+// ==================== // ==================== Start Over ====================
 function startOver() {
   state = {
     sessionId: null, fileName: '', fileType: '', isPdf: false,
@@ -1934,7 +2106,8 @@ function startOver() {
   document.getElementById('ocr-switch').classList.remove('on');
   document.getElementById('cn-llm-switch').classList.remove('on');
   document.getElementById('llm-switch')?.classList.remove('on');
-  document.getElementById('custom-entities').innerHTML = '';
+  var ce = document.getElementById('custom-entities');
+  if (ce) ce.innerHTML = '';
   document.getElementById('mapping-detail').classList.add('hidden');
   fileInput.value = '';
   goToStep(1);
@@ -2357,7 +2530,7 @@ function hashStr(s) {
 
 <div style="text-align:center;padding:24px 16px 32px;color:var(--text-3);font-size:12px;line-height:1.8;">
   <div style="margin-bottom:4px;">法律文档脱敏工具 &middot; 完全本地运行 &middot; 不联网不上传</div>
-  <div>Made with &#10084;&#65039; by <strong style="color:var(--text-2);">黄灵宝同学</strong></div>
+  <div>Made with &#10084;&#65039; by <strong style="color:var(--text-2);">环德律所</strong></div>
 </div>
 
 </body>

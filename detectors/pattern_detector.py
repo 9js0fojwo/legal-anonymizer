@@ -46,6 +46,9 @@ class PatternDetector:
         'house_number': 7,
         'postal_code': 8,    # 6位纯数字，最容易误匹配
         'patent_number': 3,
+        'trademark_number': 3,
+        'lawyer_license': 3,
+        'long_alphanumeric': 6,
         'document_number': 3,
         'project_name': 5,   # 项目名称容易误匹配，优先级略低
     }
@@ -194,6 +197,15 @@ class PatternDetector:
             # 专利/商标/著作权申请号（含国际专利局代码）
             'patent_number': r'(?:专利|商标|著作权)(?:申请|注册|登记)号[：:]\s*[A-Z0-9.]+|(?:CN|US|EP|JP|WO|KR|GB|DE|FR|CA|AU)\d{4,}[A-Z]?\d?',
 
+            # 商标注册号（第 + 数字 + 号）
+            'trademark_number': r'(?:商标注册号|商标号|商标编号|第)\s*\d{4,12}\s*号',
+
+            # 律师执业证号（16-18位）
+            'lawyer_license': r'(?:律师执业证|律师资格证|律师证|执业证|执业证书)\s*(?:号|号码|编号)?[：:\s]*\d{15,18}',
+
+            # 连续字母/数字/符号（25-100位，如 token、API key、哈希值）
+            'long_alphanumeric': r'[A-Za-z0-9+/=._\-:]{25,100}',
+
             # 合同/文件编号（扩展：协议号、函件编号等）
             'document_number': r'(?:文件编号|文件号|函件编号|协议号|编号)[：:.]\s*[A-Za-z0-9\-_]{4,30}',
 
@@ -237,6 +249,9 @@ class PatternDetector:
             'property_cert': '房地产证号',
             'permit_number': '证书/批文编号',
             'patent_number': '专利/商标编号',
+            'trademark_number': '商标注册号',
+            'lawyer_license': '律师执业证号',
+            'long_alphanumeric': '连续字母/数字/符号',
             'document_number': '文件编号',
             'project_name': '项目名称',
         }
