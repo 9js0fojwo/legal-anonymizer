@@ -940,7 +940,7 @@ body {
     <div class="card">
       <div class="card-title">手动划线脱敏</div>
       <p style="font-size:13px;color:var(--text-2);margin-bottom:10px;">
-        在原文中<strong>选中文字</strong>预览<span style="color:#F53F3F;text-decoration:line-through;font-weight:bold;">标红划线</span>，点「确认添加」后加入脱敏字典。
+        在原文中<strong>选中文字</strong>预览<span style="color:#F53F3F;text-decoration:line-through;font-weight:bold;">标红划线</span>，点「确认添加」后<strong>仅本次文件</strong>生效（不加入全局词典）。
       </p>
       <div id="manual-text-viewer" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:30px 40px;max-height:500px;overflow-y:auto;background:#fff;font-family:SimSun,宋体,serif;font-size:12pt;line-height:22pt;text-align:justify;color:#000;"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
@@ -1843,7 +1843,10 @@ function markSelection(viewer) {
   try {
     range.surroundContents(span);
   } catch(e) {
-    return;
+    // 跨元素选择时 surroundContents 失败，改为提取文本并替换
+    var extracted = range.extractContents();
+    span.appendChild(extracted);
+    range.insertNode(span);
   }
   sel.removeAllRanges();
 
@@ -1863,7 +1866,7 @@ function confirmLastMark() {
   if (!lastMarkedSpan || !lastMarkedText) return;
   var word = lastMarkedText;
 
-  // 加入词典（一次即可，脱敏引擎会自动处理全文）
+  // 仅加入当前文件会话（不加入全局词典）
   var entry = { type: 'other', name: word };
   state.customEntities.push(entry);
   fetch('/api/entities', {
@@ -1871,11 +1874,6 @@ function confirmLastMark() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: state.sessionId, action: 'add', entities: [entry] }),
   });
-  fetch('/api/user-dict/add', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entries: [entry] }),
-  }).then(function(){ loadUserDict(); });
 
   // 全文所有出现位置都标红划线
   var viewer = document.getElementById('manual-text-viewer');
@@ -1884,7 +1882,7 @@ function confirmLastMark() {
   document.getElementById('btn-confirm-mark').style.display = 'none';
   document.getElementById('btn-undo-mark').style.display = 'none';
   var st = document.getElementById('manual-text-status');
-  if (st) st.textContent = '已添加「' + word + '」到脱敏词典，全文 ' + count + ' 处已标红';
+  if (st) st.textContent = '「' + word + '」已加入本次脱敏（仅本文件），全文 ' + count + ' 处已标红';
   lastMarkedSpan = null;
   lastMarkedText = '';
 }
