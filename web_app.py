@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from flask import Flask, request, jsonify, send_file, render_template
 from anonymizer import LegalAnonymizer
+from processors.file_processor import FileProcessor
+from activation import is_activated, activate, get_activation_status, is_premium_feature_available
 
 
 def is_scanned_pdf(file_path: str) -> bool:
@@ -55,9 +57,27 @@ UPLOAD_DIR = BASE_DIR / 'uploads'
 OUTPUT_DIR = BASE_DIR / 'output'
 INBOX_DIR = BASE_DIR / 'inbox'
 USER_DICT_PATH = BASE_DIR / 'user_dict.json'
+USER_EXCLUDE_PATH = BASE_DIR / 'user_exclude.json'
 
 for d in [UPLOAD_DIR, OUTPUT_DIR, INBOX_DIR]:
     d.mkdir(exist_ok=True)
+
+
+def load_user_exclude() -> list:
+    """加载持久化排除列表（非脱敏对象）"""
+    if USER_EXCLUDE_PATH.exists():
+        try:
+            with open(USER_EXCLUDE_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def save_user_exclude(entries: list):
+    """保存排除列表到磁盘"""
+    with open(USER_EXCLUDE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(entries, f, ensure_ascii=False, indent=2)
 
 
 def load_user_dict() -> list:
@@ -223,7 +243,30 @@ def create_session(file_path: str, file_name: str) -> dict:
 def index():
     # 启动脚本根据用户首次选择写入 ENABLE_OPENAI=0/1，未启用时前端隐藏 OpenAI 开关
     enable_openai = os.environ.get('ENABLE_OPENAI', '0') == '1'
-    return render_template('index.html', enable_openai=enable_openai)
+    activated = is_activated()
+    return render_template('index.html', enable_openai=enable_openai, activated=activated)
+
+
+# ==================== 激活码 API ====================
+
+@app.route('/api/activation/status', methods=['GET'])
+def activation_status():
+    """查询激活状态"""
+    return jsonify(get_activation_status())
+
+
+@app.route('/api/activation/activate', methods=['POST'])
+def activation_activate():
+    """激活软件"""
+    data = request.get_json(silent=True) or {}
+    code = data.get('code', '').strip()
+    if not code:
+        return jsonify({'success': False, 'error': '请输入激活码'}), 400
+    ok = activate(code)
+    if ok:
+        return jsonify({'success': True, 'message': '激活成功！专业版功能已解锁 🎉'})
+    else:
+        return jsonify({'success': False, 'error': '激活码无效，请检查后重试'}), 400
 
 
 # ==================== API 路由 ====================
@@ -380,6 +423,11 @@ def _run_single_analyze(session_id: str, use_ocr: bool, ocr_engine: str,
         progress['stage'] = 'detect'
         progress['percent'] = 92
         all_entities = anonymizer._detect_all(text)
+        # 过滤非脱敏对象（排除列表）
+        exclude_list = load_user_exclude()
+        if exclude_list:
+            exclude_names = {e['name'] for e in exclude_list}
+            all_entities = [(t, ty, p) for t, ty, p in all_entities if t not in exclude_names]
         session['auto_entities'] = all_entities
 
         # 整理 findings — 前后各 100 字上下文
@@ -434,6 +482,21 @@ def analyze_document():
     ocr_engine = data.get('ocr_engine', 'rapidocr')
     use_cn_llm = data.get('use_cn_llm', False)
     use_llm = data.get('use_llm', False)
+
+    # 检查高级功能权限
+    blocked = []
+    if use_ocr and not is_premium_feature_available('ocr'):
+        blocked.append('OCR 扫描件识别')
+    if use_cn_llm and not is_premium_feature_available('cn_ner'):
+        blocked.append('中文 NER 智能检测')
+    if use_llm and not is_premium_feature_available('openai_llm'):
+        blocked.append('OpenAI 隐私过滤')
+    if blocked:
+        return jsonify({
+            'error': f"以下功能为专业版专属：{', '.join(blocked)}",
+            'premium_required': True,
+            'message': '请购买激活码解锁全部高级功能',
+        }), 402
 
     session = sessions.get(session_id)
     if not session:
@@ -579,8 +642,15 @@ def anonymize_document():
         )
 
         # 设置掩码策略；whitebox 是占位符策略 + PDF 渲染时不画文字
+        # blackout 是全部涂黑策略 + PDF 渲染时用黑色填充
         pdf_whitebox = (mask_strategy == 'whitebox')
-        effective_strategy = 'placeholder' if pdf_whitebox else mask_strategy
+        pdf_blackout = (mask_strategy == 'blackout')
+        if pdf_whitebox:
+            effective_strategy = 'placeholder'
+        elif pdf_blackout:
+            effective_strategy = 'blackout'
+        else:
+            effective_strategy = mask_strategy
         if effective_strategy:
             anonymizer.set_all_mask_strategy(effective_strategy)
 
@@ -600,6 +670,11 @@ def anonymize_document():
 
         # 重新检测实体
         all_entities = anonymizer._detect_all(session['text'])
+        # 过滤非脱敏对象
+        exclude_list = load_user_exclude()
+        if exclude_list:
+            exclude_names = {e['name'] for e in exclude_list}
+            all_entities = [(t, ty, p) for t, ty, p in all_entities if t not in exclude_names]
 
         # 过滤掉用户排除的实体
         if excluded_entities:
@@ -642,6 +717,7 @@ def anonymize_document():
                 use_ocr=session.get('use_ocr', False),
                 ocr_engine=session.get('ocr_engine', 'rapidocr'),
                 whitebox_only=pdf_whitebox,
+                blackout_only=pdf_blackout,
             )
             saved_files.extend(files)
 
@@ -736,7 +812,13 @@ def re_anonymize_document():
         excluded_entities = session.get('last_excluded_entities', [])
 
         pdf_whitebox = (mask_strategy == 'whitebox')
-        effective_strategy = 'placeholder' if pdf_whitebox else mask_strategy
+        pdf_blackout = (mask_strategy == 'blackout')
+        if pdf_whitebox:
+            effective_strategy = 'placeholder'
+        elif pdf_blackout:
+            effective_strategy = 'blackout'
+        else:
+            effective_strategy = mask_strategy
         if effective_strategy:
             anonymizer.set_all_mask_strategy(effective_strategy)
 
@@ -782,6 +864,7 @@ def re_anonymize_document():
                 use_ocr=session.get('use_ocr', False),
                 ocr_engine=session.get('ocr_engine', 'rapidocr'),
                 whitebox_only=pdf_whitebox,
+                blackout_only=pdf_blackout,
             )
             saved_files.extend(files)
 
@@ -965,6 +1048,45 @@ def clear_user_dict():
     return jsonify({'entries': [], 'count': 0})
 
 
+# ==================== 非脱敏对象（排除列表） ====================
+
+@app.route('/api/user-exclude', methods=['GET'])
+def get_user_exclude():
+    entries = load_user_exclude()
+    return jsonify({'entries': entries, 'count': len(entries)})
+
+
+@app.route('/api/user-exclude/add', methods=['POST'])
+def add_user_exclude():
+    data = request.get_json()
+    new_entries = data.get('entries', [])
+    current = load_user_exclude()
+    added = 0
+    for e in new_entries:
+        if not any(x['name'] == e['name'] for x in current):
+            current.append({'name': e['name'], 'type': e.get('type', 'other')})
+            added += 1
+    save_user_exclude(current)
+    return jsonify({'status': 'ok', 'added': added, 'count': len(current)})
+
+
+@app.route('/api/user-exclude/remove', methods=['POST'])
+def remove_user_exclude():
+    data = request.get_json()
+    entries = data.get('entries', [])
+    current = load_user_exclude()
+    for e in entries:
+        current = [x for x in current if x['name'] != e['name']]
+    save_user_exclude(current)
+    return jsonify({'status': 'ok', 'count': len(current)})
+
+
+@app.route('/api/user-exclude/clear', methods=['POST'])
+def clear_user_exclude():
+    save_user_exclude([])
+    return jsonify({'entries': [], 'count': 0})
+
+
 # ==================== 批量处理 ====================
 
 # 批次状态：batch_id -> {created_at, items: [...], done, total}
@@ -978,6 +1100,23 @@ def _cleanup_batches():
     for bid in expired:
         # 不再清理输出文件，让用户来得及取回
         del batches[bid]
+
+
+# 还原导出 job 存储
+restore_export_jobs: Dict[str, dict] = {}
+RESTORE_EXPORT_JOB_TIMEOUT = 3600  # 1 小时
+
+
+def _cleanup_restore_export_jobs():
+    """清理过期的还原导出 job"""
+    now = time.time()
+    expired = [jid for jid, j in restore_export_jobs.items() if now - j['created_at'] > RESTORE_EXPORT_JOB_TIMEOUT]
+    for jid in expired:
+        try:
+            Path(restore_export_jobs[jid]['output_path']).unlink(missing_ok=True)
+        except Exception:
+            pass
+        del restore_export_jobs[jid]
 
 
 def _detect_placeholder_style(text: str) -> str:
@@ -1060,11 +1199,18 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
         )
         # whitebox 模式仍然用 placeholder 策略生成文本占位符（[PERSON_1]等），
         # 但会传 pdf_whitebox=True 让 PDF 输出层不画文字、只留白框
+        # blackout 模式用全部涂黑策略（█），PDF 输出层用黑色填充
         strategy = options.get('mask_strategy', 'placeholder')
         pdf_whitebox = (strategy == 'whitebox')
-        anonymizer.set_all_mask_strategy('placeholder' if pdf_whitebox else strategy)
-        # 占位符风格：'auto' 时按文件内容判断中/英；whitebox 不画文字所以风格无关
-        sample = _peek_file_text(item['file_path']) if not pdf_whitebox else ''
+        pdf_blackout = (strategy == 'blackout')
+        if pdf_whitebox:
+            anonymizer.set_all_mask_strategy('placeholder')
+        elif pdf_blackout:
+            anonymizer.set_all_mask_strategy('blackout')
+        else:
+            anonymizer.set_all_mask_strategy(strategy)
+        # 占位符风格：'auto' 时按文件内容判断中/英；whitebox/blackout 不画文字所以风格无关
+        sample = _peek_file_text(item['file_path']) if not (pdf_whitebox or pdf_blackout) else ''
         ph_style = _resolve_placeholder_style(
             options.get('placeholder_style', 'auto'), sample
         )
@@ -1096,6 +1242,7 @@ def _process_batch_item(batch_id: str, item: dict, options: dict):
             save_text_backup=True,
             save_mapping=True,
             pdf_whitebox=pdf_whitebox,
+            pdf_blackout=pdf_blackout,
         )
         if 'error' in result:
             item['status'] = 'error'
@@ -1184,6 +1331,215 @@ def restore_text():
         })
     except Exception as e:
         return jsonify({'error': f'还原失败: {str(e)}'}), 500
+
+
+# ==================== 还原导出 ====================
+
+@app.route('/api/restore-export', methods=['POST'])
+def restore_export():
+    """将脱敏后的文档 + mapping.json 还原为原始内容，导出DOCX/PDF"""
+    _cleanup_restore_export_jobs()
+
+    if 'file' not in request.files:
+        return jsonify({'error': '请上传脱敏后的文档'}), 400
+    if 'mapping' not in request.files:
+        return jsonify({'error': '请上传映射文件（_mapping.json）'}), 400
+
+    file = request.files['file']
+    mapping_file = request.files['mapping']
+
+    if not file.filename:
+        return jsonify({'error': '文档文件名为空'}), 400
+    if not mapping_file.filename:
+        return jsonify({'error': '映射文件名为空'}), 400
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in {'.txt', '.md', '.pdf', '.docx', '.doc'}:
+        return jsonify({'error': f'不支持的文档格式: {suffix}'}), 400
+
+    # 解析 mapping JSON
+    try:
+        mapping_raw = mapping_file.read()
+        mapping_data = json.loads(mapping_raw.decode('utf-8'))
+    except Exception as e:
+        return jsonify({'error': f'映射 JSON 解析失败: {str(e)}'}), 400
+
+    # 提取 mapping dict（兼容两种格式）
+    if isinstance(mapping_data, dict) and 'mapping' in mapping_data and isinstance(mapping_data['mapping'], dict):
+        mapping_dict = mapping_data['mapping']
+    else:
+        mapping_dict = mapping_data
+
+    # 构建反向映射 {placeholder: original}
+    reverse_mapping = {}
+    for placeholder, val in mapping_dict.items():
+        if isinstance(val, dict):
+            orig = val.get('original', '')
+        else:
+            orig = str(val)
+        if placeholder and orig:
+            reverse_mapping[placeholder] = orig
+
+    if not reverse_mapping:
+        return jsonify({'error': '映射表中没有可用的占位符→原文对应关系'}), 400
+
+    # 输出格式
+    output_format = (request.form.get('format') or 'docx').lower()
+    if output_format not in ('docx', 'pdf'):
+        output_format = 'docx'
+
+    # 保存上传的脱敏文档
+    safe_name = f"re_{uuid.uuid4().hex[:8]}_{file.filename}"
+    input_path = UPLOAD_DIR / safe_name
+    file.save(str(input_path))
+
+    try:
+        job_id = uuid.uuid4().hex[:10]
+        orig_stem = Path(file.filename).stem
+        output_stem = OUTPUT_DIR / f"re_{job_id}_{orig_stem}_还原版"
+        output_path = output_stem.with_suffix('.' + output_format)
+
+        placeholders_found = 0
+        placeholders_total = len(reverse_mapping)
+        warnings = []
+
+        # DOCX 输入：原地 XML 反向替换，保留原始排版
+        if suffix in ('.docx', '.doc'):
+            if output_format == 'docx':
+                # DOCX → DOCX：原地替换，完美保留格式
+                processor = FileProcessor()
+                if processor.restore_docx_inplace(str(input_path), str(output_path), reverse_mapping):
+                    # 统计实际替换了多少占位符
+                    try:
+                        from docx import Document as _Doc
+                        doc_check = _Doc(str(output_path))
+                        full_xml_text = ''
+                        for para in doc_check.paragraphs:
+                            full_xml_text += para.text
+                    except Exception:
+                        full_xml_text = ''
+                    # 从 mapping 中检查哪些占位符在原文中出现过
+                    try:
+                        doc_orig = _Doc(str(input_path))
+                        orig_full = ''
+                        for para in doc_orig.paragraphs:
+                            orig_full += para.text
+                    except Exception:
+                        orig_full = ''
+                    for ph in reverse_mapping:
+                        if ph in orig_full:
+                            placeholders_found += 1
+                    missing = [ph for ph in reverse_mapping if ph not in orig_full]
+                    if missing:
+                        warnings.append(f'以下占位符在文档中未找到：{", ".join(missing[:10])}{"..." if len(missing) > 10 else ""}')
+                else:
+                    # DOCX 原地还原失败，回退到文本提取+模板输出
+                    text = processor.extract_text(str(input_path))
+                    restored = LegalAnonymizer.restore_text(text, mapping_dict)
+                    for ph in reverse_mapping:
+                        if ph in text:
+                            placeholders_found += 1
+                    processor.write_file(restored, str(output_path), output_format)
+                    warnings.append('DOCX 原地还原失败，已通过文本提取+模板排版输出（原始格式可能丢失）')
+            else:
+                # DOCX → PDF：提取文本 → 还原 → 模板PDF
+                processor = FileProcessor()
+                text = processor.extract_text(str(input_path))
+                restored = LegalAnonymizer.restore_text(text, mapping_dict)
+                for ph in reverse_mapping:
+                    if ph in text:
+                        placeholders_found += 1
+                processor.write_file(restored, str(output_path), 'pdf')
+                missing = [ph for ph in reverse_mapping if ph not in text]
+                if missing:
+                    warnings.append(f'以下占位符在文档中未找到：{", ".join(missing[:10])}{"..." if len(missing) > 10 else ""}')
+
+        # PDF 输入：提取文本 → 还原 → 模板输出
+        elif suffix == '.pdf':
+            processor = FileProcessor()
+            text = processor.extract_text(str(input_path), use_ocr=False)
+            if len(text.strip()) < 50:
+                warnings.append('PDF 文字层内容极少，可能为扫描件。建议使用有文字层的 PDF 或 DOCX 格式以获得完整还原。')
+            restored = LegalAnonymizer.restore_text(text, mapping_dict)
+            for ph in reverse_mapping:
+                if ph in text:
+                    placeholders_found += 1
+            processor.write_file(restored, str(output_path), output_format)
+            missing = [ph for ph in reverse_mapping if ph not in text]
+            if missing:
+                warnings.append(f'以下占位符在文档中未找到：{", ".join(missing[:10])}{"..." if len(missing) > 10 else ""}')
+
+        # TXT/MD 输入：读取文本 → 还原 → 模板输出
+        else:
+            for enc in ('utf-8-sig', 'utf-8', 'gbk', 'gb18030'):
+                try:
+                    with open(str(input_path), 'r', encoding=enc) as f:
+                        text = f.read()
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                with open(str(input_path), 'r', encoding='utf-8', errors='replace') as f:
+                    text = f.read()
+            restored = LegalAnonymizer.restore_text(text, mapping_dict)
+            for ph in reverse_mapping:
+                if ph in text:
+                    placeholders_found += 1
+            processor = FileProcessor()
+            processor.write_file(restored, str(output_path), output_format)
+            missing = [ph for ph in reverse_mapping if ph not in text]
+            if missing:
+                warnings.append(f'以下占位符在文档中未找到：{", ".join(missing[:10])}{"..." if len(missing) > 10 else ""}')
+
+        if placeholders_found == 0:
+            warnings.insert(0, '文档中未找到任何映射表中的占位符，请确认上传的映射文件与脱敏文档匹配。输出文件与输入一致。')
+
+        # 存储 job 信息
+        restore_export_jobs[job_id] = {
+            'output_path': str(output_path),
+            'created_at': time.time(),
+            'filename': f'{orig_stem}_还原版.{output_format}',
+        }
+
+        return jsonify({
+            'status': 'success',
+            'job_id': job_id,
+            'download_url': f'/api/restore-export/download/{job_id}',
+            'output_format': output_format,
+            'filename': f'{orig_stem}_还原版.{output_format}',
+            'placeholders_found': placeholders_found,
+            'placeholders_total': placeholders_total,
+            'warnings': warnings if warnings else None,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'还原导出失败: {str(e)}'}), 500
+    finally:
+        # 清理上传临时文件
+        try:
+            input_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+@app.route('/api/restore-export/download/<job_id>', methods=['GET'])
+def restore_export_download(job_id):
+    """下载还原导出的文件"""
+    job = restore_export_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': '下载链接不存在或已过期'}), 404
+
+    output_path = Path(job['output_path'])
+    if not output_path.exists():
+        return jsonify({'error': '输出文件不存在，可能已被清理'}), 404
+
+    return send_file(
+        str(output_path),
+        as_attachment=True,
+        download_name=job.get('filename', output_path.name),
+    )
 
 
 @app.route('/api/batch/upload', methods=['POST'])

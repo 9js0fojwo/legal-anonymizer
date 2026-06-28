@@ -80,6 +80,11 @@ SESSION_LOG.md
 # 启动脚本写的用户偏好（每个用户机器自己生成）
 .user_config
 
+# 激活码系统（不能泄露到公开仓库）
+.activation.json
+activation_codes.txt
+激活码列表.txt
+
 # 模型预下载完成标志（每个用户机器自己生成）
 .models_downloaded
 test/sweep_results/
