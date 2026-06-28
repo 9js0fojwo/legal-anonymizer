@@ -97,7 +97,7 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-*Made with ❤️ by 黄灵宝同学（Rainbow Wong）*
+*Made with ❤️ by 树肥同学*
 
 ---
 
@@ -190,4 +190,4 @@ Apache License 2.0 —— 见 [LICENSE](LICENSE)
 
 ---
 
-*Made with ❤️ by 黄灵宝同学（Rainbow Wong）*
+*Made with ❤️ by 树肥同学*
