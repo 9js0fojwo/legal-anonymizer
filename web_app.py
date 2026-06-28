@@ -29,6 +29,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 from anonymizer import LegalAnonymizer
 from processors.file_processor import FileProcessor
 from activation import is_activated, activate, get_activation_status, is_premium_feature_available
+from update_checker import check_update, CURRENT_VERSION
 
 
 def is_scanned_pdf(file_path: str) -> bool:
@@ -267,6 +268,22 @@ def activation_activate():
         return jsonify({'success': True, 'message': '激活成功！专业版功能已解锁 🎉'})
     else:
         return jsonify({'success': False, 'error': '激活码无效，请检查后重试'}), 400
+
+
+@app.route('/api/update/check', methods=['GET'])
+def update_check():
+    """检查版本更新"""
+    import threading
+    result = {}
+    def _run():
+        nonlocal result
+        result = check_update(force='force' in request.args)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=15)
+    if not result:
+        result = {"has_update": False, "current": CURRENT_VERSION, "error": "检查超时"}
+    return jsonify(result)
 
 
 # ==================== API 路由 ====================

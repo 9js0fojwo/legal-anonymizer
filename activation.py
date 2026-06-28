@@ -14,8 +14,9 @@ from datetime import datetime
 # ⚠️ 不要改这个密钥。改了之后所有已发出的激活码全部失效。
 SECRET_KEY = b"legal-anonymizer-2026-rainbow-secret-key-v1"
 
-# 激活状态文件
-ACTIVATION_FILE = Path(__file__).parent / ".activation.json"
+# 激活状态文件 — 存用户目录，换版本不丢
+ACTIVATION_DIR = Path.home() / ".legal-anonymizer"
+ACTIVATION_FILE = ACTIVATION_DIR / "activation.json"
 
 # 高级功能列表
 PREMIUM_FEATURES = [
@@ -101,6 +102,8 @@ def activate(code: str) -> bool:
     """
     if not validate_code(code):
         return False
+
+    ACTIVATION_DIR.mkdir(parents=True, exist_ok=True)
 
     data = {
         "code": code,
