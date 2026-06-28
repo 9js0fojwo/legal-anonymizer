@@ -14,97 +14,75 @@
 
 ## English
 
-A **100% local, offline** anonymization tool for legal documents.  
-No data leaves your machine. No cloud APIs. No subscriptions.
+A **100% local, offline** legal document anonymization tool. Double-click to start. No uploads. No cloud. Your files never leave your computer.
 
-Built for lawyers, paralegals, and compliance teams who need to redact sensitive information before sharing documents — while keeping the original formatting intact.
+---
 
-### Features
+### 3 Steps
 
-- **Fully offline** — all processing happens on your computer; nothing is uploaded
-- **3-layer detection** — regex rules + Chinese NER (CLUENER) + English LLM (OpenAI privacy-filter, optional)
-- **30+ sensitive data types** — names (including compound surnames), companies, ID numbers, phone numbers, bank cards, case numbers, addresses, amounts, emails, API tokens, and more
-- **Triple output format** — one run produces **MD + DOCX + PDF** simultaneously
-- **Format-preserving** — DOCX→DOCX keeps fonts and layout; PDF→PDF redacts in-place, preserving stamps and page structure
-- **Dual OCR engines** — RapidOCR (fast, lightweight) by default; switch to PaddleOCR for complex layouts
-- **Chinese-English mixed documents** — handles bilingual legal filings, cross-border contracts, international arbitration materials
-- **Web UI + CLI** — drag-and-drop browser interface, or batch-process via command line
+**1. Download → 2. Unzip → 3. Double-click `启动脱敏工具.bat`** (Windows) or `.command` (macOS)
 
-### Quick Start
+Browser opens at `http://127.0.0.1:8080`. Drag a file in. Done.
 
-#### macOS / Windows (recommended)
+> First run auto-installs dependencies (3-5 min). Subsequent launches are instant.
 
-1. Download the latest zip from **[Releases](../../releases)**
-2. Unzip anywhere (e.g., Desktop)
-3. Double-click:
-   - **macOS**: `【请双击我！】启动脱敏工具.command`
-   - **Windows**: `启动脱敏工具.bat`
-4. First run auto-installs dependencies and downloads the NER model (~400 MB)
-5. Browser opens at `http://127.0.0.1:8080` — start using immediately
-6. Subsequent launches skip to step 5 (everything cached)
+---
 
-> **macOS security prompt?** Go to System Settings → Privacy & Security → scroll down → click "Open Anyway", enter your password, then double-click the file again.
+### Killer Features
 
-#### Manual install
+#### 🔧 You Make the Rules
 
-```bash
-git clone https://github.com/rainbow1111-lalala/legal-anonymizer.git
-cd legal-anonymizer
-pip3 install -r requirements.txt
-python3 web_app.py
+Not a one-size-fits-all blacklist. **You decide.**
+
+- **Force-mask** specific words (client names, project codes) → add to custom dictionary
+- **Never-mask** specific words (your firm's name, public info) → add to exclusion list
+- The tool follows *your* judgment, not the other way around.
+
+#### 🔄 Redact → Edit → Restore (game changer)
+
+Redact a contract → send to client → client edits → get it back → **restore all redacted content with one click.**
+
+```
+Original → Redacted → Client edits → Upload redacted file + mapping →
+  → One-click restore → Complete contract. Every name back in place.
 ```
 
-### CLI Usage
+No manual cross-referencing. No hand-restoration. No mistakes. **No other anonymization tool does this.**
 
-```bash
-# Anonymize a Word document
-python3 cli.py anonymize input.docx -o output.docx
+#### ✍️ Manual Review Mode
 
-# Anonymize a PDF
-python3 cli.py anonymize input.pdf -o output.pdf
+Machine detection is the first pass. You are the final pass.
 
-# Scanned PDF with OCR
-python3 cli.py anonymize scan.pdf -o output.docx --ocr
+- Select text → right-click → redact. Like a highlighter, but for privacy.
+- Machine missed something? Mark it manually.
+- Machine flagged wrong? One-click undo.
+- Sleep better knowing you checked every line yourself.
 
-# Analyze only (no redaction)
-python3 cli.py analyze input.docx
+---
 
-# List all supported sensitive data types
-python3 cli.py list-types
-```
+### Free vs Pro
 
-### Optional: Enable LLM Layers
+| | Free 🆓 | Pro 💎 |
+|------|----------|---------|
+| Basic redaction (30+ types) | ✅ | ✅ |
+| Manual line-through redaction | ✅ | ✅ |
+| **Custom dictionary** (force-mask words) | ❌ | ✅ |
+| **Exclusion list** (never-mask words) | ❌ | ✅ |
+| **Redact → Edit → Restore** (upload mapping to restore) | ❌ | ✅ |
+| **Chinese NER** (compound surnames, companies, addresses) | ❌ | ✅ |
+| **OCR** (scanned PDFs) | ❌ | ✅ |
+| Triple output (MD+DOCX+PDF) | ❌ | ✅ |
+| CLI batch processing | ❌ | ✅ |
 
-| Layer | Model | Size | What it catches |
-|---|---|---|---|
-| CN NER | `uer/roberta-base-finetuned-cluener2020-chinese` | ~400 MB | Chinese names (incl. compound), companies, addresses |
-| EN LLM | `openai/privacy-filter` (1.5B MoE) | ~2.6 GB | English names, addresses, international phone numbers, API tokens |
+> 💡 **Pro — ¥199 one-time, permanent** → WeChat: **law18520071304**. Files stay local. Fully offline even after activation.
 
-```bash
-pip3 install torch transformers
+---
 
-# Chinese NER only (recommended for Chinese documents)
-python3 cli.py anonymize input.docx -o output.docx --cn-llm
+### More
 
-# English LLM only (English-primary documents)
-python3 cli.py anonymize input.docx -o output.docx --llm
-
-# Both layers (Chinese-English mixed documents)
-python3 cli.py anonymize input.docx -o output.docx --cn-llm --llm
-```
-
-### Privacy & Security
-
-- Zero network calls during processing — `grep -r "requests\|urllib\|http" *.py` returns nothing for data paths
-- LLM models download once to `~/.cache/huggingface/`, then run fully offline
-- To enforce air-gap mode: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python3 web_app.py`
-
-### Docs
-
-- [`docs/项目报告.md`](docs/项目报告.md) — full technical report (architecture, benchmarks, development history)
-- [`docs/简明版报告.md`](docs/简明版报告.md) — summary version for sharing with colleagues
-- [`首次使用指南.pdf`](首次使用指南.pdf) — illustrated 13-chapter user guide (Chinese)
-- [`DISCLAIMER.md`](DISCLAIMER.md) — liability disclaimer (read before use)
+- Manual install: `pip install -r requirements.txt && python web_app.py`
+- CLI: `python cli.py anonymize input.docx -o output.docx`
+- [Full docs](docs/项目报告.md) · [User guide PDF](首次使用指南.pdf) · [Disclaimer](DISCLAIMER.md)
 
 ### Contributing
 
@@ -127,174 +105,76 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## 中文
 
-> ⚠️ **使用前请阅读 [DISCLAIMER.md（免责声明）](DISCLAIMER.md)**：本工具是辅助性脱敏工具，**不能替代人工复核**。最终脱敏结果由使用者负责确认。
+> ⚠️ 使用前请阅读 [免责声明](DISCLAIMER.md)：本工具为辅助性工具，**不能替代人工复核**。
 
-一款**完全本地运行**、**不联网不上传**的法律文书敏感信息脱敏工具。律师、法务、合规人员的本地脱敏助手。
+一款**100% 本地运行、不联网不上传**的法律文书脱敏工具。双击启动，浏览器操作，文件不出电脑。
 
-中文法律文书 100% 本地脱敏 · 支持中英混合涉外文件 · 一键输出 MD/DOCX/PDF 三格式 · 保留原文档字体排版盖章
+---
+
+### 三步搞定
+
+**1. 下载 → 2. 解压 → 3. 双击 `启动脱敏工具.bat`**
+
+浏览器自动打开 `http://127.0.0.1:8080`，拖文件进去，开始脱敏。
+
+> 首次启动自动安装依赖（3-5 分钟），之后秒开。macOS 双击 `.command` 文件。
+
+---
+
+### 三大杀招
+
+#### 🔧 完全按你的规矩来
+
+不是死板的"全部脱敏"——**你说了算**。
+
+- 指定哪些词**必须脱敏**（比如你的客户名字、特定项目代号）→ 加入自定义词典
+- 指定哪些词**绝对不脱**（比如律所名称、公开信息）→ 加入排除列表
+- 你设定规则，工具执行。不是反过来。
+
+#### 🔄 脱敏→修改→还原（律师才知道这有多值钱）
+
+你把合同脱敏发给客户 → 客户修改 → 你拿到改好的合同 → **把脱敏内容一键还原回去**。
+
+```
+原文 → 脱敏 → 发给客户修改 → 客户改好传回 →
+  → 上传脱敏文件 + 映射表 → 一键还原 → 完整合同，一个字不差
+```
+
+**不用手动对照、不用人工复原、不会漏掉任何一个名字。** 这是市面上所有脱敏工具都没有的功能。
+
+#### ✍️ 手动划线复查
+
+机器跑完，你再过一遍——选中文字、划线标红、一键脱敏。
+
+- 自动检测漏掉的？手动补上
+- 机器误判的？一键撤销
+- 走完一遍，心里有底
+
+---
 
 ### 免费版 vs 专业版
 
-| 功能 | 免费版 🆓 | 专业版 💎 ¥199 永久 |
-|------|----------|-------------------|
-| 基础脱敏（30+ 类型，正则规则） | ✅ | ✅ |
-| DOCX / PDF 输出 | ✅ | ✅ |
-| Web 界面拖拽上传 | ✅ | ✅ |
+| | 免费版 🆓 | 专业版 💎 |
+|------|----------|---------|
+| 基础脱敏（30+ 类型） | ✅ | ✅ |
+| 手动划线脱敏 | ✅ | ✅ |
+| **自定义词典**（指定脱敏词） | ❌ | ✅ |
+| **排除列表**（指定不脱敏词） | ❌ | ✅ |
+| **脱敏→修改→还原**（上传映射表还原） | ❌ | ✅ |
 | **中文 NER 智能检测**（复姓/公司/地址） | ❌ | ✅ |
-| **OpenAI 隐私过滤**（英文人名/地址/API token） | ❌ | ✅ |
-| **OCR 扫描件识别**（双引擎） | ❌ | ✅ |
-| **多格式同时输出**（MD+DOCX+PDF） | ❌ | ✅ |
-| **命令行批处理** | ❌ | ✅ |
-| **自定义词典** | ❌ | ✅ |
-| **商业化使用** | ❌ 仅个人非商业 | ✅ |
+| **OCR 扫描件识别** | ❌ | ✅ |
+| 三格式输出（MD+DOCX+PDF） | ❌ | ✅ |
+| 批处理 | ❌ | ✅ |
 
-> 💡 **购买专业版**：加微信 **law18520071304**，¥199 获取永久激活码，解锁全部功能。
-> 
-> 文件 100% 不出电脑，激活后完全离线使用。
+> 💡 **¥199 永久激活** → 加微信 **law18520071304**。文件不出电脑，激活后完全离线使用。
 
-### 功能亮点
+---
 
-- 🔒 **100% 本地运行**：所有处理在你电脑上完成，不调用任何外部 API，不上传任何数据
-- 🎯 **三层智能检测**：正则规则 + 中文 NER（CLUENER）+ 英文 LLM（OpenAI privacy-filter，可选）
-- 📑 **30+ 种敏感信息**：人名（含复姓）、公司、身份证、手机、银行卡、案号、地址、金额、邮箱、API token 等
-- 📋 **多格式同时输出**（专业版）：一次脱敏生成 **MD + DOCX + PDF** 三份文件
-- 🎨 **原格式保留**：DOCX→DOCX 完整保留字体/排版；PDF→PDF 原地脱敏保留布局/盖章
-- 🔍 **双 OCR 引擎**（专业版）：默认 RapidOCR（快、轻量），复杂排版可切 PaddleOCR
-- 🇨🇳 **中文友好**：复姓识别（欧阳/万俟/诸葛/皇甫/司马/上官）、PDF 排版换行自动合并
-- 🌐 **网页 + 命令行**：拖拽上传可视化操作，或 CLI 批处理，皆可
+### 更多
 
-### 快速开始（推荐）
-
-1. 在右侧 **[Releases](../../releases)** 页下载最新版 zip
-2. 解压到任意位置（如桌面）
-3. 双击：
-   - **macOS**：`【请双击我！】启动脱敏工具.command`
-   - **Windows**：`启动脱敏工具.bat`
-4. 首次启动自动安装依赖、下载中文 NER 模型（~400MB，3-5 分钟）
-5. 浏览器自动打开 `http://127.0.0.1:8080`，开始用
-6. 以后再启动直接到第 5 步（依赖和模型已缓存）
-
-> **macOS 弹出安全提示？** 系统设置 → 隐私与安全性 → 向下滚动 → 点「仍要打开」→ 输入密码 → 再次双击文件
-
-### 手动安装
-
-**第一步：确认有 Python 3.9+**
-
-```bash
-python3 --version   # macOS
-python --version    # Windows
-```
-
-没有则去 https://www.python.org/downloads/ 安装（Windows 安装时勾选 `Add Python to PATH`）。
-
-**第二步：安装并启动**
-
-```bash
-git clone https://github.com/rainbow1111-lalala/legal-anonymizer.git
-cd legal-anonymizer
-pip3 install -r requirements.txt   # Windows 用 pip
-python3 web_app.py                  # Windows 用 python
-```
-
-### 命令行用法
-
-```bash
-# 脱敏 Word 文档
-python3 cli.py anonymize input.docx -o output.docx
-
-# 脱敏 PDF
-python3 cli.py anonymize input.pdf -o output.pdf
-
-# 扫描版 PDF 启用 OCR
-python3 cli.py anonymize scan.pdf -o output.docx --ocr
-
-# 只分析不脱敏
-python3 cli.py analyze input.docx
-
-# 查看支持的所有类型
-python3 cli.py list-types
-```
-
-### 可选：启用 LLM 补充检测
-
-| 层 | 模型 | 大小 | 主要补盲 |
-|---|---|---|---|
-| CN NER | `uer/roberta-base-finetuned-cluener2020-chinese` | ~400 MB | 中文人名（含复姓）、中文公司、中文地址 |
-| OpenAI | `openai/privacy-filter`（1.5B MoE） | ~2.6 GB | 英文人名、英文地址、国际电话、API token |
-
-```bash
-pip3 install torch transformers
-
-# 只开中文 NER（推荐，补规则漏掉的中文人名/公司/地址）
-python3 cli.py anonymize input.docx -o output.docx --cn-llm
-
-# 只开 OpenAI（文档以英文为主时）
-python3 cli.py anonymize input.docx -o output.docx --llm
-
-# 全开（中英混合最强模式）
-python3 cli.py anonymize input.docx -o output.docx --cn-llm --llm
-```
-
-**三层仲裁机制：**
-
-1. 结构化数据（身份证/银行卡/邮箱等）一律由正则处理
-2. CN NER 可纠错规则层的边界错切和分类误判
-3. 同名全文一致性：CN NER 漏检的同名人名自动扩展到全文
-4. OpenAI 仅补空位：只覆盖前两层都没抓到的位置
-5. 英文段落不跑 CN NER，避免英文普通词误报
-
-### 三层检测实测收益
-
-**硬中文样本**（借款合同判决书）：
-
-| 项 | 纯规则 | +CN NER |
-|---|---|---|
-| 中文人名漏检 | 10+ 处（含 6 种复姓） | 全部抓到 |
-| 复姓识别 | 错切（"司马XX"→"司"+"马XX"） | 正确合并 |
-| 完整地址 | 只抓地址碎片 | 完整地址 |
-
-**中英混合样本**（涉外民事起诉状）：
-
-| 项 | 纯规则 | +CN NER +OpenAI |
-|---|---|---|
-| 英文人名 | 漏 | John Smith / Jennifer Chen |
-| 英文地址 | 漏 | 2025 Mission Street, San Francisco |
-| 国际电话 | 漏 | +1 / +44 |
-| API token | 漏 | sk-proj-... |
-
-### 隐私安全
-
-- 处理过程零网络请求——`grep -r "requests\|urllib\|http" *.py` 数据路径返回空
-- LLM 模型一次性下载到 `~/.cache/huggingface/`，之后全程离线推理
-- 彻底断网模式：`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python3 web_app.py`
-
-### 深入文档
-
-- [`docs/项目报告.md`](docs/项目报告.md) —— 详细技术报告（架构、实测、开发历程）
-- [`docs/简明版报告.md`](docs/简明版报告.md) —— 公众号友好版，适合分享给同行
-- [`首次使用指南.pdf`](首次使用指南.pdf) —— 13 章节图文使用手册
-- [`DISCLAIMER.md`](DISCLAIMER.md) —— 免责声明（使用前必读）
-
-### 常见问题
-
-**`pip install` 报 `Permission denied`**  
-在命令前加 `--user`：`pip3 install --user -r requirements.txt`
-
-**浏览器没有自动打开**  
-手动输入终端中显示的地址，通常是 `http://127.0.0.1:8080`
-
-**报错 `Address already in use`**  
-端口被占用，程序会自动尝试 8080-8099。仍失败则关掉占用端口的其他程序。
-
-**报错 `ModuleNotFoundError: No module named 'flask'`**  
-依赖未装成功，重新执行：`python3 -m pip install -r requirements.txt`
-
-### 贡献
-
-- 发现漏检 → 提 issue 附带（脱敏过的）样例文本
-- 发现误报 → 同上
-- 想加新检测类型 → 先提 issue 讨论再 PR
-- 文档改进 → 直接 PR
+- [详细文档](docs/项目报告.md) · [简明版介绍](docs/简明版报告.md) · [使用手册 PDF](首次使用指南.pdf)
+- 手动安装：`pip install -r requirements.txt && python web_app.py`
+- CLI 批处理：`python cli.py anonymize input.docx -o output.docx`
 
 ### 协议
 
