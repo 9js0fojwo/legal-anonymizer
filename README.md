@@ -119,6 +119,10 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 > 首次启动自动安装依赖（3-5 分钟），之后秒开。macOS 双击 `.command` 文件。
 
+**📥 下载**：
+- [GitHub Releases](../../releases/latest)（最新版）
+- [蓝奏云](https://wwbhx.lanzout.com/iaNop3td0xva) 提取码：`996m`（打不开 GitHub 用这个）
+
 ---
 
 ### 三大杀招
